@@ -32,25 +32,20 @@ ports:
       certResolver: "letsencrypt"
       domains:
         - main: "*.madeof.glass"
-  dht-udp:
-    port: 51413
-    protocol: UDP
-    expose: true
-  # storj-tcp:
-  #   port: 28967
-  #   protocol: TCP
-  #   tls: 
-  #     enabled: false
-  # storj-udp:
-  #   port: 28967
+  # dht-udp:
+  #   port: 51413
   #   protocol: UDP
   #   expose: true
-  # chia-tcp:
-  #   port: 8444
-  #   protocol: TCP
-  #   tls: 
-  #     enabled: false
-      
+  minecraft:
+    port: 25565
+    protocol: TCP
+    tls:
+      enabled: true
+      options: ""
+      certResolver: "letsencrypt"
+      domains:
+        - main: "*.madeof.glass"
+
 service:
   enabled: true
   type: LoadBalancer

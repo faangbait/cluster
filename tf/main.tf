@@ -31,6 +31,7 @@ variable "routes" {
     default = {
         glass = [
             "sso",
+            "minecraft.public",
         ]
         prod = [
             "mon"
