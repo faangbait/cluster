@@ -94,11 +94,19 @@ resource "aws_route53_record" "glass_ip" {
     records     = [data.external.current_ip.result.ip]
 }
 
+resource "aws_route53_record" "prod_tld" {
+    zone_id     = var.zones.prod
+    name        = ""
+    type        = "A"
+    ttl         = 300
+    records     = [data.external.current_ip.result.ip]
+}
+
 resource "aws_route53_record" "prod_ip" {
     zone_id     = var.zones.prod
     name        = "ingress"
     type        = "A"
-    ttl         = 5
+    ttl         = 300
     records     = [data.external.current_ip.result.ip] # maybe change
 }
 
