@@ -29,9 +29,9 @@ spec:
       - name: prod-home-web
         image: nginx:latest
         volumeMounts:
-        - mountPath: /config
+        - mountPath: /usr/share/nginx/html
           name: cfg-prod-home
-          subPath: "limitless"
+          subPath: "cfg/limitless"
         resources:
           limits:
             memory: 64Mi
@@ -41,7 +41,7 @@ spec:
           glusterfs:
             endpoints: glusterfs-cluster
             path: glass_cfg
-            readOnly: false
+            readOnly: true
 
 ---
 # Create Landing Page Service
@@ -57,7 +57,7 @@ spec:
   selector:
     app.kubernetes.io/name: prod-home-web
   ports:
-    - port: 8080
+    - port: 80
       name: prod-home-http
 
 ---
@@ -76,9 +76,6 @@ spec:
   routes:
     - match: Host(`limitlessinteractive.com`)
       kind: Rule
-      middlewares:
-      - name: secure-auth
-        namespace: public
       services:
         - name: prod-home-service
           port: prod-home-http
