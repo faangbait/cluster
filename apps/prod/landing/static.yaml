@@ -1,0 +1,86 @@
+# Create Static Landing Page
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prod-home
+  namespace: public
+  labels:
+    app.kubernetes.io/name: prod-home
+    app.kubernetes.io/part-of: prod-home
+    app.kubernetes.io/release: stable
+  annotations:
+    a8r.io/description: "Static landing page for TLD."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/cluster"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prod-home-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prod-home-web
+        app.kubernetes.io/part-of: prod-home
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+      - name: prod-home-web
+        image: nginx:latest
+        volumeMounts:
+        - mountPath: /config
+          name: cfg-prod-home
+          subPath: "limitless"
+        resources:
+          limits:
+            memory: 64Mi
+            cpu: ".5"
+      volumes:
+        - name: cfg-prod-home
+          glusterfs:
+            endpoints: glusterfs-cluster
+            path: glass_cfg
+            readOnly: false
+
+---
+# Create Landing Page Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-home-service
+  namespace: public
+  labels:
+    app.kubernetes.io/name: prod-home-service
+    app.kubernetes.io/part-of: prod-home
+spec:
+  selector:
+    app.kubernetes.io/name: prod-home-web
+  ports:
+    - port: 8080
+      name: prod-home-http
+
+---
+# Create Landing Page IngressRoute
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: prod-home-ingress
+  namespace: public
+  labels:
+    app.kubernetes.io/name: prod-home-ingress
+    app.kubernetes.io/part-of: prod-home
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`limitlessinteractive.com`)
+      kind: Rule
+      middlewares:
+      - name: secure-auth
+        namespace: public
+      services:
+        - name: prod-home-service
+          port: prod-home-http
+  tls:
+    certResolver: letsencrypt
