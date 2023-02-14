@@ -1,0 +1,271 @@
+# TODO: Untested
+
+##### AUTH #####################################################################
+
+# Create Forward Auth Middleware
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: default
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: lab
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: antennae
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: archives
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: home
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: news
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: public
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:4181
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+# Create Keycloak Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-web
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-deployment
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Creates the Keycloak deployment in the default namespace."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-web
+        app.kubernetes.io/part-of: auth
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+      - name: auth-web
+        image: quay.io/keycloak/keycloak:20.0.1
+        args: ["start-dev"]
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "ss"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "admin"
+        - name: KC_PROXY
+          value: "edge"
+        - name: KC_HOSTNAME
+          value: "sso.madeof.glass"
+        # - name: KC_HOSTNAME_STRICT
+        #   value: "false"
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: "2"
+          limits:
+            memory: 2Gi
+            cpu: "2"
+---
+# Create Keycloak Srevice
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Creates the Keycloak service in the default namespace."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  selector:
+    app.kubernetes.io/name: auth-web
+  internalTrafficPolicy: Cluster
+  ports:
+  - port: 8080
+    name: auth-http
+    # targetPort: 8080
+  # type: LoadBalancer
+  # loadBalancerIP: "10.0.10.100"
+---
+# Create Keycloak IngressRoute
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: auth-ingress
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-ingress
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Provides Traefik ingress for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`sso.madeof.glass`)
+      kind: Rule
+      services:
+        - name: auth-service
+          port: auth-http
+  tls:
+    certResolver: letsencrypt

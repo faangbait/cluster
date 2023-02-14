@@ -1,0 +1,411 @@
+##### HELM #####################################################################
+#
+# kubectl config set-context --current --namespace=default
+#
+# helm repo add bitnami https://charts.bitnami.com/bitnami
+# helm install auth-redis --set sentinel.enabled=true --set auth.enabled=false --set auth.sentinel=false --set master.persistence.enabled=false --set replica.persistence.enabled=false bitnami/redis
+#
+##### AUTH #####################################################################
+---
+# Create Forward Auth Middleware
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: default
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: lab
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: antennae
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: archives
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: home
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: news
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: public
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
+
+# Create Authelia configuration.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-configmap
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-configmap
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Creates authelia config and file-based auth for users."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  users: |
+    users:
+      ss:
+        displayname: "S Smith"
+        password: "$argon2id$v=19$m=65536,t=1,p=8$ZkduK2tlTFdhc3RWUFQ5Nw$s2rrkGn1VrZCK3jyB+98NBqxggUIZ8mpR6dBoRgdx/0"
+        email: "root@madeof.glass"
+        groups:
+          - admins
+          - dev
+  config: |
+    access_control:
+      default_policy: deny
+      rules:
+      - domain: '*.lab.madeof.glass'
+        policy: one_factor
+      - domain: '*.antennae.madeof.glass'
+        policy: one_factor
+      - domain: '*.archives.madeof.glass'
+        policy: two_factor
+      - domain: '*.vault.madeof.glass'
+        policy: two_factor
+      - domain: '*.news.madeof.glass'
+        policy: one_factor
+      - domain: '*.home.madeof.glass'
+        policy: one_factor
+      - domain: '*.public.madeof.glass'
+        policy: bypass
+      - domain: 'screen.home.madeof.glass'
+        policy: bypass
+    authentication_backend:
+      file:
+        path: /configmap/users.yml
+    log:
+      level: warn
+    notifier:
+      filesystem:
+        filename: /config/notification-log
+    password_policy:
+      standard:
+        enabled: true
+        min_length: 4
+        max_length: 0
+        require_uppercase: false
+        require_lowercase: false
+        require_number: false
+        require_special: false
+    regulation:
+      max_retries: 3
+      find_time: 1m
+      ban_time: 5m
+    server:
+      host: 0.0.0.0
+      port: 9091
+    session:
+      domain: madeof.glass
+      redis:
+        host: auth-redis
+        high_availability:
+          sentinel_name: mymaster
+    storage:
+      encryption_key: 
+      local:
+        path: /config/db.sqlite3
+    theme: auto
+    totp:
+      issuer: authelia.com
+      period: 30
+      skew: 1
+    default_redirection_url: https://madeof.glass
+---
+# Create Authelia Secret Files
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: generate-auth-secrets
+  namespace: default
+  labels:
+    app.kubernetes.io/name: generate-auth-secrets
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Generates secrets once."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  template:
+    spec:
+      containers:
+      - name: generate-auth-secrets
+        image: docker.io/alpine/openssl:latest
+        command: ["/bin/sh"]
+        args: ["-c", "openssl rand -base64 128 > /config/AUTHELIA_JWT_SECRET; openssl rand -base64 128 > /config/AUTHELIA_SESSION_SECRET; openssl rand -base64 128 > /config/AUTHELIA_STORAGE_ENCRYPTION_KEY;"]
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: ".5"
+          limits:
+            memory: 1Gi
+            cpu: ".5"
+        volumeMounts:
+        - mountPath: /config
+          name: cfg-auth
+          subPath: "cfg/authelia"
+      volumes:
+      - name: cfg-auth
+        glusterfs:
+          endpoints: glusterfs-cluster
+          path: glass_cfg
+          readOnly: false
+      restartPolicy: OnFailure
+---
+# Create Authelia Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-web
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-deployment
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Deploys Authelia into the Default namespace."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-web
+        app.kubernetes.io/part-of: auth
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+      - name: auth-web
+        image: docker.io/authelia/authelia
+        command: ["authelia", "--config=/configmap/configuration.yml"]
+        env:
+          - name: AUTHELIA_JWT_SECRET_FILE
+            value: /config/AUTHELIA_JWT_SECRET
+          - name: AUTHELIA_SESSION_SECRET_FILE
+            value: /config/AUTHELIA_SESSION_SECRET
+          - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
+            value: /config/AUTHELIA_STORAGE_ENCRYPTION_KEY
+        volumeMounts:
+        - mountPath: /config
+          name: cfg-auth
+          subPath: "cfg/authelia"
+        - mountPath: /configmap
+          name: auth-configmap
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: "2"
+          limits:
+            memory: 2Gi # Probably too high
+            cpu: "2"
+      volumes:
+        - name: cfg-auth
+          glusterfs:
+            endpoints: glusterfs-cluster
+            path: glass_cfg
+            readOnly: false
+        - name: auth-configmap
+          configMap:
+            name: auth-configmap
+            items:
+            - key: config
+              path: configuration.yml
+            - key: users
+              path: users.yml
+
+---
+# Create Authelia Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Creates the Authelia service in the default namespace."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  selector:
+    app.kubernetes.io/name: auth-web
+  internalTrafficPolicy: Cluster
+  ports:
+    - port: 9091
+      name: auth-service
+---
+# Create Authelia IngressRoute
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: auth-ingress
+  namespace: default
+  labels:
+    app.kubernetes.io/name: auth-ingress
+    app.kubernetes.io/part-of: auth
+  annotations:
+    a8r.io/description: "Provides Traefik ingress for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`sso.madeof.glass`)
+      kind: Rule
+      # middlewares:
+      # - name: secure-auth
+      #   namespace: default
+      services:
+        - name: auth-service
+          port: 9091
+  tls:
+    certResolver: letsencrypt

@@ -1,0 +1,82 @@
+
+additionalArguments:
+  - "--api.insecure=true"
+  - "--accesslog=true"
+  - "--log.level=INFO"
+
+envFrom:
+  - secretRef:
+      name: aws-credentials
+
+deployment:
+  imagePullSecrets:
+    - name: regcred
+ports:
+  web:
+    port: 80
+    redirectTo: websecure
+  websecure:
+    port: 443
+    tls:
+      enabled: true
+      options: ""
+      certResolver: "letsencrypt"
+      domains:
+        - main: "*.madeof.glass"
+  dht-tcp:
+    port: 51413
+    protocol: TCP
+    tls:
+      enabled: true
+      options: ""
+      certResolver: "letsencrypt"
+      domains:
+        - main: "*.madeof.glass"
+  dht-udp:
+    port: 51413
+    protocol: UDP
+    expose: true
+  # storj-tcp:
+  #   port: 28967
+  #   protocol: TCP
+  #   tls: 
+  #     enabled: false
+  # storj-udp:
+  #   port: 28967
+  #   protocol: UDP
+  #   expose: true
+  # chia-tcp:
+  #   port: 8444
+  #   protocol: TCP
+  #   tls: 
+  #     enabled: false
+      
+service:
+  enabled: true
+  type: LoadBalancer
+  spec:
+    loadBalancerIP: "10.0.10.129"
+
+tlsOptions:
+  default:
+    sniStrict: true
+    preferServerCipherSuites: true
+    curvePreferences:
+      - CurveP521
+      - CurveP384
+
+certResolvers:
+  letsencrypt:
+    email: root@madeof.glass
+    dnsChallenge:
+      provider: route53
+    storage: /data/acme.json
+
+securityContext:
+  capabilities:
+    drop: [ALL]
+    add: [NET_BIND_SERVICE]
+  readOnlyRootFilesystem: true
+  runAsGroup: 0
+  runAsNonRoot: false
+  runAsUser: 0

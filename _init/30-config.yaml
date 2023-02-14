@@ -1,0 +1,144 @@
+##### CONFIG ###################################################################
+#
+# kubectl config set-context --current --namespace=default
+#
+# Creates universal configmaps in every namespace
+#
+################################################################################
+---
+# Create LinuxServer Global Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: default
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: lab
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: antennae
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: archives
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: home
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: news
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: public
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"

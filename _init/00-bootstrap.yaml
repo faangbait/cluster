@@ -1,0 +1,95 @@
+##### INTRO ####################################################################
+#
+# WARNING: ALWAYS APPLY FILES IN THIS DIRECTORY TO THE DEFAULT NAMESPACE.
+#
+# kubectl config set-context --current --namespace=default
+#
+# This bootstrapper establishes the core structure of the cluster.
+# It sets up authentication, storage, universal configs, and namespaces.
+# It's okay to apply this regularly; it's non-breaking.
+#
+##### NAMESPACES ###############################################################
+# Core Namespaces: lab, antennae, archives, vault, home, news, public
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab
+  labels:
+    app.kubernetes.io/part-of: lab
+  annotations:
+    a8r.io/description: "Contains all the moving parts of a CI/CD pipeline, plus a sandbox environment for app deployment."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: antennae
+  labels:
+    app.kubernetes.io/part-of: antennae
+  annotations:
+    a8r.io/description: "Ingests and stores APIs/data sources."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: archives
+  labels:
+    app.kubernetes.io/part-of: archives
+  annotations:
+    a8r.io/description: "LTS for deprecated/abandoned projects."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+  labels:
+    app.kubernetes.io/part-of: vault
+  annotations:
+    a8r.io/description: "High-security environment; private access."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: home
+  labels:
+    app.kubernetes.io/part-of: home
+  annotations:
+    a8r.io/description: "Workloads related to the real world."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: news
+  labels:
+    app.kubernetes.io/part-of: news
+  annotations:
+    a8r.io/description: "Reads and posts to usenet, sorts content."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: public
+  labels:
+    app.kubernetes.io/part-of: public
+  annotations:
+    a8r.io/description: "Public-facing applications and services."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+################################################################################
