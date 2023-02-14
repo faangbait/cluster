@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: busybox-deployment
+  name: ubi8-deployment
   labels:
-    app: busybox
+    app: ubi8
 spec:
   replicas: 3
   strategy: 
     type: RollingUpdate
   selector:
     matchLabels:
-      app: busybox
+      app: ubi8
   template:
     metadata:
       labels:
-        app: busybox
+        app: ubi8
     spec:
       containers:
-      - name: busybox
-        image: busybox
+      - name: ubi8
+        image: ubi8
         imagePullPolicy: IfNotPresent
         
         command: ['sh', '-c', 'echo Container 1 is Running ; sleep 3600']
