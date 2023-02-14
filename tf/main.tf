@@ -32,7 +32,9 @@ variable "routes" {
         glass = [
             "sso",
         ]
-        prod = []
+        prod = [
+            "mon"
+        ]
     }
 }
 
