@@ -32,6 +32,7 @@ variable "routes" {
         glass = [
             "sso",
             "minecraft.public",
+            "registry.lab",
         ]
         prod = [
             "mon"

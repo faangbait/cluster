@@ -1,0 +1,104 @@
+# Create Docker Registry
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: lab
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/part-of: registry
+    app.kubernetes.io/release: stable
+  annotations:
+    a8r.io/description: "Internal docker registry"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/cluster"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: registry-server
+        app.kubernetes.io/part-of: registry
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+      - name: registry-server
+        image: registry:2
+        volumeMounts:
+        - mountPath: /var/lib/registry
+          name: bulk-registry
+          subPath: "cfg/registry"
+        resources:
+          limits:
+            memory: 128Mi
+            cpu: ".5"
+      volumes:
+        - name: bulk-registry
+          glusterfs:
+            endpoints: glusterfs-cluster
+            path: glass_bulk
+            readOnly: false
+---
+# Create Registry Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-service
+  namespace: lab
+  labels:
+    app.kubernetes.io/name: registry-service
+    app.kubernetes.io/part-of: registry
+spec:
+  selector:
+    app.kubernetes.io/name: registry-server
+  ports:
+    - port: 5000
+      name: registry-tcp
+---
+# Create Registry IngressRoute
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: registry-ingress
+  namespace: lab
+  labels:
+    app.kubernetes.io/name: registry-ingress
+    app.kubernetes.io/part-of: registry
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`registry.lab.madeof.glass`)
+      kind: Rule
+      services:
+        - name: registry-service
+          port: registry-tcp
+      middlewares:
+        - name: registry-cors
+          namespace: lab
+  tls:
+    certResolver: letsencrypt
+---
+# Create CORS Middleware
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: registry-cors
+  namespace: lab
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - OPTIONS
+      - PUT
+      - POST
+      - DELETE
+    accessControlAllowOriginList:
+      - https://registry.lab.madeof.glass
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 100
+    addVaryHeader: true
