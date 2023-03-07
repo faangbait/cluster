@@ -3,6 +3,7 @@ additionalArguments:
   - "--api.insecure=true"
   - "--accesslog=true"
   - "--log.level=INFO"
+  - "--providers.file.filename=/config/dynamic.yaml"
 
 envFrom:
   - secretRef:
@@ -75,3 +76,8 @@ securityContext:
   runAsGroup: 0
   runAsNonRoot: false
   runAsUser: 0
+
+volumes:
+  - name: traefik-configmap
+    mountPath: "/config"
+    type: configMap
