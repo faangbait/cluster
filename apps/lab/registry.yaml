@@ -28,6 +28,9 @@ spec:
       containers:
       - name: registry-server
         image: registry:2
+        env:
+        - name: REGISTRY_STORAGE_DELETE_ENABLED
+          value: "true"
         volumeMounts:
         - mountPath: /var/lib/registry
           name: bulk-registry
