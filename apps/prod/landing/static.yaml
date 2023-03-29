@@ -1,3 +1,18 @@
+---
+# Create Static PVC
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: static
+  namespace: public
+spec:
+  storageClassName: "glass-cfg"
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 15Mi
+---
 # Create Static Landing Page
 apiVersion: apps/v1
 kind: Deployment
@@ -31,17 +46,14 @@ spec:
         volumeMounts:
         - mountPath: /usr/share/nginx/html
           name: cfg-prod-home
-          subPath: "cfg/limitless"
         resources:
           limits:
             memory: 64Mi
             cpu: ".5"
       volumes:
         - name: cfg-prod-home
-          glusterfs:
-            endpoints: glusterfs-cluster
-            path: glass_cfg
-            readOnly: true
+          persistentVolumeClaim:
+            claimName: static
 
 ---
 # Create Landing Page Service
