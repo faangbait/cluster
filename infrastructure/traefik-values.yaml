@@ -12,6 +12,17 @@ envFrom:
 deployment:
   imagePullSecrets:
     - name: regcred
+  initContainers:
+    - name: volume-permissions
+      image: busybox:latest
+      command: ["sh", "-c", "touch /data/acme.json; chmod -v 600 /data/acme.json"]
+      securityContext:
+        runAsNonRoot: true
+        runAsGroup: 65532
+        runAsUser: 65532
+      volumeMounts:
+      - mountPath: /data
+        name: certs
 ports:
   web:
     port: 80
@@ -81,3 +92,9 @@ volumes:
   - name: traefik-configmap
     mountPath: "/config"
     type: configMap
+
+persistence:
+  enabled: true
+  storageClass: "glass-cfg"
+  name: "certs"
+  path: "/data"

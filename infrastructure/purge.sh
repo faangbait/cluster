@@ -21,7 +21,7 @@ sudo systemctl enable --now kubelet
 
 # First node only
 sudo mkdir -p /etc/kubernetes/config
-sudo cp ../config.mount/* /etc/kubernetes/config/
+sudo cp config.mount/* /etc/kubernetes/config/
 sudo sed -i "s|REPLACEME|$(head -c 32 /dev/urandom | base64)|g" /etc/kubernetes/config/secret-encryption.yaml
 sudo chmod 600 /etc/kubernetes/config/secret-encryption.yaml
 sudo chown root:root /etc/kubernetes/config/secret-encryption.yaml

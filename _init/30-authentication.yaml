@@ -273,6 +273,20 @@ data:
       skew: 1
     default_redirection_url: https://madeof.glass
 ---
+# Create Authelia PVC
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: authelia
+  namespace: default
+spec:
+  storageClassName: "glass-cfg"
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Mi
+---
 # Create Authelia Secret Files
 apiVersion: batch/v1
 kind: Job
@@ -304,13 +318,10 @@ spec:
         volumeMounts:
         - mountPath: /config
           name: cfg-auth
-          subPath: "cfg/authelia"
       volumes:
-      - name: cfg-auth
-        glusterfs:
-          endpoints: glusterfs-cluster
-          path: glass_cfg
-          readOnly: false
+        - name: cfg-auth
+          persistentVolumeClaim:
+            claimName: authelia
       restartPolicy: OnFailure
 ---
 # Create Authelia Deployment
@@ -355,7 +366,6 @@ spec:
         volumeMounts:
         - mountPath: /config
           name: cfg-auth
-          subPath: "cfg/authelia"
         - mountPath: /configmap
           name: auth-configmap
         resources:
@@ -367,10 +377,8 @@ spec:
             cpu: "2"
       volumes:
         - name: cfg-auth
-          glusterfs:
-            endpoints: glusterfs-cluster
-            path: glass_cfg
-            readOnly: false
+          persistentVolumeClaim:
+            claimName: authelia
         - name: auth-configmap
           configMap:
             name: auth-configmap

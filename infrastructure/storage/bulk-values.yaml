@@ -1,0 +1,9 @@
+nfs:
+  server: '10.0.0.254'
+  path: '/bulk'
+storageClass:
+  name: glass-bulk
+  provisionerName: k8s-sigs.io/glass-bulk-provisioner
+  archiveOnDelete: false
+  accessModes: ReadWriteMany
+  pathPattern: pvc/${.PVC.namespace}/${.PVC.name}

@@ -1,0 +1,9 @@
+nfs:
+  server: '10.0.0.254'
+  path: '/cfg'
+storageClass:
+  name: glass-cfg
+  provisionerName: k8s-sigs.io/glass-cfg-provisioner
+  defaultClass: true
+  accessModes: ReadWriteMany
+  pathPattern: pvc/${.PVC.namespace}/${.PVC.name}

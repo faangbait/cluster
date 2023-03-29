@@ -32,7 +32,7 @@ apiServer:
     audit-log-maxsize: "100"
     audit-log-path: "/var/log/kubernetes-audit"
     authorization-mode: "Node,RBAC"
-    enable-admission-plugins: "NodeRestriction,AlwaysPullImages,SecurityContextDeny,PodSecurity,EventRateLimit"
+    enable-admission-plugins: "NodeRestriction,AlwaysPullImages,SecurityContextDeny,PodSecurity,EventRateLimit,DefaultStorageClass"
     encryption-provider-config: "/etc/kubernetes/config/secret-encryption.yaml"
     profiling: "false"
     service-account-lookup: "true"

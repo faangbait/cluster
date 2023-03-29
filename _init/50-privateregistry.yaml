@@ -1,3 +1,18 @@
+---
+# Create Docker Registry PVC
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: registry
+  namespace: lab
+spec:
+  storageClassName: "glass-bulk"
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+---
 # Create Docker Registry
 apiVersion: apps/v1
 kind: Deployment
@@ -34,17 +49,14 @@ spec:
         volumeMounts:
         - mountPath: /var/lib/registry
           name: bulk-registry
-          subPath: "cfg/registry"
         resources:
           limits:
             memory: 128Mi
             cpu: ".5"
       volumes:
         - name: bulk-registry
-          glusterfs:
-            endpoints: glusterfs-cluster
-            path: glass_bulk
-            readOnly: false
+          persistentVolumeClaim:
+            claimName: registry
 ---
 # Create Registry Service
 apiVersion: v1

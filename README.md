@@ -25,8 +25,8 @@ Interface: Trusted LAN
 ## [ALL] Set Preferred Kubernetes Version
 ```sh
 # e.g. for 1.24.8 from yum list --showduplicates kubeadm --disableexcludes=kubernetes
-export VERSION=1.24
-export MINORVERSION=9
+export VERSION=1.26
+export PATCHVERSION=1
 ```
 
 ## [ALL] /etc/hosts
@@ -147,11 +147,11 @@ sudo systemctl enable --now crio
 ```sh
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-sudo dnf install -y kubelet-$VERSION.$MINORVERSION kubeadm-$VERSION.$MINORVERSION kubectl-$VERSION.$MINORVERSION --disableexcludes=kubernetes
+sudo dnf install -y kubelet-$VERSION.$PATCHVERSION kubeadm-$VERSION.$PATCHVERSION kubectl-$VERSION.$PATCHVERSION --disableexcludes=kubernetes
 sudo yum versionlock kubelet kubeadm kubectl
 sudo systemctl enable --now kubelet
 
-export VERSION=;export MINORVERSION=
+export VERSION=;export PATCHVERSION=
 ```
 
 >## PASS/FAIL: Infrastructure
@@ -225,7 +225,7 @@ sudo mkdir -p /home/kube/.kube
 ```sh
 sudo rsync -aP /etc/kubernetes/admin.conf node1:/home/kube/.kube/config
 sudo rsync -aP /etc/kubernetes/admin.conf node2:/home/kube/.kube/config
-sudo rsync -aP /etc/kubernetes/admin.conf node3:/home/kube/.kube/config
+sudo rsync -aP /etc/kubernetes/admin.conf node4:/home/kube/.kube/config
 
 ```
 
@@ -245,7 +245,7 @@ sudo reboot
 kubectl create namespace tigera-operator
 
 helm repo add projectcalico https://projectcalico.docs.tigera.io/charts
-helm install calico projectcalico/tigera-operator --version v3.24.5 -f infrastructure/tigera-values.yaml --namespace tigera-operator
+helm install calico projectcalico/tigera-operator --version v3.25.0 -f infrastructure/tigera-values.yaml --namespace tigera-operator
 ```
 
 
@@ -291,7 +291,7 @@ kubectl apply -f infrastructure/metallb-resources.yaml
 > - `watch kubectl get svc -n default`
 
 ## Configure Traefik
-Provides reverse proxy into cluster.
+Provides reverse proxy into cluster. Note: requires _init/00-bootstrap.yaml and _init/10-storage.yaml
 ```sh
 sudo firewall-cmd --permanent --add-port=443/tcp
 sudo firewall-cmd --permanent --add-port=9000/tcp
@@ -315,6 +315,58 @@ These are highly workflow-dependent, but this is what I use.
 
 ```sh
 kubectl apply -f _init
+```
+
+## Notes for v1.26+
+v1.26 removes native gluster support. I've swapped to `nfs-ganesha`:
+
+## [CP] /etc/ganesha/ganesha.conf
+```sh
+NFS_CORE_PARAM {
+        mount_path_pseudo = true;
+        Protocols = 3,4,9P;
+}
+
+
+EXPORT
+{
+        Export_Id = 1;
+        Path = "cfg";
+
+        FSAL {
+                name = GLUSTER;
+                hostname = "10.0.0.254";
+                volume = "glass_bulk";
+        }
+
+        Access_type = RW;
+        Squash = No_root_squash;
+        Disable_ACL = TRUE;
+        Pseudo = "/bulk";
+        Protocols = 3,4;
+        Transports = "UDP","TCP";
+        SecType = "sys";
+}
+
+EXPORT
+{
+        Export_Id = 2;
+        Path = "cfg"; 
+
+        FSAL {
+                name = GLUSTER;
+                hostname = "10.0.0.254";
+                volume = "glass_cfg";
+        }
+        Access_type = RW;
+        Squash = No_root_squash;
+        Disable_ACL = TRUE;
+        Pseudo = "/cfg";
+        Protocols = 3,4;
+        Transports = "UDP","TCP";
+        SecType	= "sys";
+}
+
 ```
 
 ## Verify Installation Success (You Hope)

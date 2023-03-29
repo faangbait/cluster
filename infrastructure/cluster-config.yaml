@@ -21,6 +21,7 @@ apiServer:
     audit-log-path: "/var/log/kubernetes-audit"
     authorization-mode: "Node,RBAC"
     encryption-provider-config: "/etc/kubernetes/config/secret-encryption.yaml"
+    enable-admission-plugins: "DefaultStorageClass"
   extraVolumes:
     - name: config
       hostPath: "/etc/kubernetes/config"
