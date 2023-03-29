@@ -1,3 +1,13 @@
+##### MONITORING ###############################################################
+#
+# kubectl config set-context --current --namespace=observability
+#
+# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm repo update
+# helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --values=infrastructure/prometheus-values.yaml
+#
+################################################################################
+
 ---
 # Create Grafana IngressRoute
 apiVersion: traefik.containo.us/v1alpha1
