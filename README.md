@@ -245,7 +245,7 @@ sudo reboot
 kubectl create namespace tigera-operator
 
 helm repo add projectcalico https://projectcalico.docs.tigera.io/charts
-helm install calico projectcalico/tigera-operator --version v3.25.0 -f infrastructure/tigera-values.yaml --namespace tigera-operator
+helm install calico projectcalico/tigera-operator --version v3.25.0 -f infrastructure/networking/tigera-values.yaml --namespace tigera-operator
 ```
 
 
@@ -282,7 +282,7 @@ kubectl create ns metallb
 kubectl config set-context --current --namespace=metallb
 helm repo add metallb https://metallb.github.io/metallb
 helm install metallb metallb/metallb
-kubectl apply -f infrastructure/metallb-resources.yaml
+kubectl apply -f infrastructure/networking/metallb-resources.yaml
 ```
 
 > ## PASS/FAIL: LoadBalancer External IP
@@ -303,7 +303,7 @@ kubectl config set-context --current --namespace=traefik
 kubectl create secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
 
 helm repo add traefik https://helm.traefik.io/traefik
-helm install traefik traefik/traefik -f infrastructure/traefik-values.yaml
+helm install traefik traefik/traefik -f infrastructure/networking/traefik-values.yaml
 ```
 
 ## Consider Installing Bootstraps Provided in _init Subfolder
