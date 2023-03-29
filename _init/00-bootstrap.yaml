@@ -87,9 +87,14 @@ metadata:
     a8r.io/description: "Public-facing applications and services."
     a8r.io/owner: "@faangbait"
     a8r.io/repository: "https://github.com/faangbait/antennae"
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-################################################################################
-################################################################################
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    app.kubernetes.io/part-of: observability
+  annotations:
+    a8r.io/description: "Monitoring and observability components."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/k8s-observability"

@@ -142,3 +142,20 @@ data:
   PUID: "1000"
   PGID: "1000"
   TZ: "America/Chicago"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lsio-conf
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: lsio-conf
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Configures containers provided by linuxserver.io"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+data:
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "America/Chicago"

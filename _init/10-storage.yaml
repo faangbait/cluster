@@ -318,3 +318,42 @@ metadata:
 spec:
   ports:
   - port: 42
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: glusterfs-cluster
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: glusterfs-cluster
+    app.kubernetes.io/part-of: default
+  annotations:
+    a8r.io/description: "Gluster dedicated storage volumes [glass_bulk, glass_cfg]"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+subsets:
+  - addresses:
+    - ip: 10.0.0.254
+      nodeName: node1
+    - ip: 10.0.0.253
+      nodeName: node2
+    - ip: 10.0.0.252
+      nodeName: node3
+    ports:
+      - port: 42
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glusterfs-cluster
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: glusterfs-service
+    app.kubernetes.io/part-of: default
+  annotations:
+    a8r.io/description: "Gluster dedicated storage volumes [glass_bulk, glass_cfg]"
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  ports:
+  - port: 42

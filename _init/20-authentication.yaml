@@ -168,6 +168,26 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: secure-auth
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: secure-auth
+    app.kubernetes.io/part-of: core
+  annotations:
+    a8r.io/description: "Provides Traefik middleware for secure authentication."
+    a8r.io/owner: "@faangbait"
+    a8r.io/repository: "https://github.com/faangbait/antennae"
+spec:
+  forwardAuth:
+    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    trustForwardHeader: true
+    authResponseHeaders:
+      - "Remote-User"
+      - "Remote-Groups"
+---
 
 # Create Authelia configuration.yaml
 apiVersion: v1
