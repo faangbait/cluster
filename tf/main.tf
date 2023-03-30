@@ -33,6 +33,7 @@ variable "routes" {
             "sso",
             "minecraft.public",
             "registry.lab",
+            "git.lab",
         ]
         prod = [
             "mon"
