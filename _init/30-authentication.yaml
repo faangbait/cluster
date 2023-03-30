@@ -1,93 +1,14 @@
 ##### HELM #####################################################################
 #
-# kubectl config set-context --current --namespace=default
+# kubectl config set-context --current --namespace=vault
+#
+# kubectl create secret generic auth-redis --from-literal="redis-password=<p>"
 #
 # helm repo add bitnami https://charts.bitnami.com/bitnami
-# helm install auth-redis --set sentinel.enabled=true --set auth.enabled=false --set auth.sentinel=false --set master.persistence.enabled=false --set replica.persistence.enabled=false bitnami/redis
+# helm install auth-redis bitnami/redis --values=infrastructure/storage/auth-redis-values.yaml
 #
 ##### AUTH #####################################################################
----
-# Create Forward Auth Middleware
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: default
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: lab
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: antennae
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: archives
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
+
 apiVersion: traefik.containo.us/v1alpha1
 kind: Middleware
 metadata:
@@ -102,99 +23,18 @@ metadata:
     a8r.io/repository: "https://github.com/faangbait/antennae"
 spec:
   forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
+    address: http://auth-service.vault:9091/api/verify?rd=https://sso.madeof.glass
     trustForwardHeader: true
     authResponseHeaders:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: home
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: news
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: public
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: secure-auth
-  namespace: observability
-  labels:
-    app.kubernetes.io/name: secure-auth
-    app.kubernetes.io/part-of: core
-  annotations:
-    a8r.io/description: "Provides Traefik middleware for secure authentication."
-    a8r.io/owner: "@faangbait"
-    a8r.io/repository: "https://github.com/faangbait/antennae"
-spec:
-  forwardAuth:
-    address: http://auth-service.default:9091/api/verify?rd=https://sso.madeof.glass
-    trustForwardHeader: true
-    authResponseHeaders:
-      - "Remote-User"
-      - "Remote-Groups"
----
-
 # Create Authelia configuration.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: auth-configmap
-  namespace: default
+  namespace: vault
   labels:
     app.kubernetes.io/name: auth-configmap
     app.kubernetes.io/part-of: core
@@ -208,7 +48,7 @@ data:
       ss:
         displayname: "S Smith"
         password: "$argon2id$v=19$m=65536,t=1,p=8$ZkduK2tlTFdhc3RWUFQ5Nw$s2rrkGn1VrZCK3jyB+98NBqxggUIZ8mpR6dBoRgdx/0"
-        email: "root@madeof.glass"
+        email: "sam@madeof.glass"
         groups:
           - admins
           - dev
@@ -232,6 +72,8 @@ data:
         policy: bypass
       - domain: 'screen.home.madeof.glass'
         policy: bypass
+      - domain: 'sso.madeof.glass'
+        policy: bypass
     authentication_backend:
       file:
         path: /configmap/users.yml
@@ -240,6 +82,7 @@ data:
     notifier:
       filesystem:
         filename: /config/notification-log
+      # smtp:
     password_policy:
       standard:
         enabled: true
@@ -261,14 +104,24 @@ data:
       redis:
         host: auth-redis
         high_availability:
-          sentinel_name: mymaster
+          sentinel_name: authelia
     storage:
-      encryption_key: 
       local:
         path: /config/db.sqlite3
+    telemetry:
+      metrics:
+        enabled: true
+        address: "tcp://0.0.0.0:9999"
+        buffers:
+          read: 4096
+          write: 4096
+        timeouts:
+          read: 6s
+          write: 6s
+          idle: 30s
     theme: auto
     totp:
-      issuer: authelia.com
+      issuer: madeof.glass
       period: 30
       skew: 1
     default_redirection_url: https://madeof.glass
@@ -278,7 +131,7 @@ kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
   name: authelia
-  namespace: default
+  namespace: vault
 spec:
   storageClassName: "glass-cfg"
   accessModes:
@@ -292,7 +145,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: generate-auth-secrets
-  namespace: default
+  namespace: vault
   labels:
     app.kubernetes.io/name: generate-auth-secrets
     app.kubernetes.io/part-of: auth
@@ -329,7 +182,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: auth-web
-  namespace: default
+  namespace: vault
   labels:
     app.kubernetes.io/name: auth-deployment
     app.kubernetes.io/part-of: auth
@@ -354,7 +207,7 @@ spec:
         - name: regcred
       containers:
       - name: auth-web
-        image: docker.io/authelia/authelia
+        image: authelia/authelia:4
         command: ["authelia", "--config=/configmap/configuration.yml"]
         env:
           - name: AUTHELIA_JWT_SECRET_FILE
@@ -363,6 +216,16 @@ spec:
             value: /config/AUTHELIA_SESSION_SECRET
           - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
             value: /config/AUTHELIA_STORAGE_ENCRYPTION_KEY
+          - name: AUTHELIA_SESSION_REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: auth-redis
+                key: redis-password
+          - name: AUTHELIA_SESSION_REDIS_HIGH_AVAILABILITY_SENTINEL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: auth-redis
+                key: redis-password
         volumeMounts:
         - mountPath: /config
           name: cfg-auth
@@ -394,7 +257,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: auth-service
-  namespace: default
+  namespace: vault
   labels:
     app.kubernetes.io/name: auth-service
     app.kubernetes.io/part-of: auth
@@ -415,7 +278,7 @@ apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
   name: auth-ingress
-  namespace: default
+  namespace: vault
   labels:
     app.kubernetes.io/name: auth-ingress
     app.kubernetes.io/part-of: auth
@@ -429,9 +292,6 @@ spec:
   routes:
     - match: Host(`sso.madeof.glass`)
       kind: Rule
-      # middlewares:
-      # - name: secure-auth
-      #   namespace: default
       services:
         - name: auth-service
           port: 9091

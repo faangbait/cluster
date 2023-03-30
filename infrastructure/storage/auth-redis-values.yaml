@@ -1,0 +1,51 @@
+global:
+  storageClass: glass-bulk
+  imagePullSecrets:
+    - regcred
+image:
+  tag: 7.0.10-debian-11-r2
+auth:
+  existingSecret: "auth-redis"
+  existingSecretPasswordKey: "redis-password"
+  usePasswordFiles: true
+master:
+  podSecurityContext:
+    fsGroup: 65532
+  containerSecurityContext:
+    runAsUser: 65532
+  persistence:
+    accessModes: ["ReadWriteMany"]
+replica:
+  podSecurityContext:
+    fsGroup: 65532
+  containerSecurityContext:
+    runAsUser: 65532
+  persistence:
+    accessModes: ["ReadWriteMany"]
+sentinel:
+  enabled: true
+  image:
+    tag: 7.0.10-debian-11-r1
+  masterSet: authelia
+  podSecurityContext:
+    fsGroup: 65532
+  containerSecurityContext:
+    runAsUser: 65532
+  persistence:
+    accessModes: ["ReadWriteMany"]
+networkPolicy:
+  enabled: true
+  ingressNSPodMatchLabels:
+    app.kubernetes.io/name: auth-web
+metrics:
+  enabled: true
+  image:
+    tag: 1.48.0-debian-11-r6
+  containerSecurityContext:
+    runAsUser: 65532
+volumePermissions: # TODO? Doesn't seem necessary.
+  enabled: false
+  image:
+    tag: 11-debian-11-r99
+  containerSecurityContext:
+    runAsUser: 65532
