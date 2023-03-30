@@ -7,12 +7,6 @@ terraform {
   }
 }
 
-#
-# ~/.aws/credentials
-# [kubernetes]
-# aws_access_key_id=
-# aws_secret_access_key=
-#
 provider "aws" {
   profile = "kubernetes"
   region = "us-east-1"
