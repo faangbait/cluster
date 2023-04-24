@@ -10,4 +10,4 @@ installation:
       encapsulation: VXLANCrossSubnet
     nodeAddressAutodetectionV4:
       cidrs:
-        - "10.0.0.0/24"
+        - "10.0.6.0/24"
