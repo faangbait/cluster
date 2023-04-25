@@ -32,9 +32,9 @@ export PATCHVERSION=1
 ## [ALL] /etc/hosts
 The DNS entry for k8s-control-plane-lb must resolve to either a single control-plane node (shown here) or to a load balancer for control-plane nodes.
 ```conf
-10.0.0.254 node1 node1.madeof.glass k8s-control-plane-lb
-10.0.0.253 node2 node2.madeof.glass
-10.0.0.252 node3 node3.madeof.glass
+10.0.6.254 node1 node1.madeof.glass k8s-control-plane-lb
+10.0.6.253 node2 node2.madeof.glass
+10.0.6.252 node3 node3.madeof.glass
 ```
 
 ## [ALL] /etc/modules-load.d/k8s.conf
@@ -245,7 +245,7 @@ sudo reboot
 kubectl create namespace tigera-operator
 
 helm repo add projectcalico https://projectcalico.docs.tigera.io/charts
-helm install calico projectcalico/tigera-operator --version v3.25.0 -f infrastructure/networking/tigera-values.yaml --namespace tigera-operator
+helm install calico projectcalico/tigera-operator --version v3.25.1 -f infrastructure/networking/tigera-values.yaml --namespace tigera-operator
 ```
 
 
@@ -265,7 +265,7 @@ sudo $(kubeadm token create  --print-join-command)
 > - `kubectl exec -ti pingtest-xxxxxxx -- sh`
 >
 > Test ping and routing to the other pods and nodes
-> - `ping 10.0.0.254 -c 4`
+> - `ping 10.0.6.254 -c 4`
 > - `ping 8.8.8.8 -c 4`
 > - `ping 10.x.x.x -c 4`
 > - `ip route get 10.x.x.x`
@@ -335,7 +335,7 @@ EXPORT
 
         FSAL {
                 name = GLUSTER;
-                hostname = "10.0.0.254";
+                hostname = "10.0.6.254";
                 volume = "glass_bulk";
         }
 
@@ -355,7 +355,7 @@ EXPORT
 
         FSAL {
                 name = GLUSTER;
-                hostname = "10.0.0.254";
+                hostname = "10.0.6.254";
                 volume = "glass_cfg";
         }
         Access_type = RW;

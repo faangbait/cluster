@@ -1,5 +1,5 @@
 nfs:
-  server: '10.0.0.254'
+  server: '10.0.6.254'
   path: '/cfg'
 storageClass:
   name: glass-cfg
