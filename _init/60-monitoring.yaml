@@ -22,7 +22,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`mon.limitlessinteractive.com`)
+    - match: Host(`mon.madeof.glass`)
       kind: Rule
       services:
         - name: kube-prometheus-stack-grafana

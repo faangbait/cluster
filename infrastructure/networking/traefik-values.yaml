@@ -45,21 +45,19 @@ ports:
   web:
     port: 8000
     expose: true
-    exposedPort: 8880
     redirectTo: websecure
 
   websecure:
     port: 8443
     expose: true
-    exposedPort: 4443
     tls:
       enabled: true
       certResolver: "letsencrypt"
       options: "default"
       domains:
         - main: "*.madeof.glass"
-    middlewares:
-      - vault-secure-auth@kubernetescrd # TODO: breaks prod
+    # middlewares:
+    #   - vault-secure-auth@kubernetescrd # TODO: breaks prod
 
   dht-tcp:
     port: 51413
