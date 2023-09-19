@@ -1,7 +1,5 @@
 # K8s Standup on Rocky 8.7
 
-_Note: Currently does not work with v1.25 due to networking plugin issues. v1.24.9 is the latest supported version._
-
 ## Important
 This documentation assumes you've navigated to this directory in your file tree (`cat README.md` returns this doc).
 
@@ -32,9 +30,10 @@ export PATCHVERSION=1
 ## [ALL] /etc/hosts
 The DNS entry for k8s-control-plane-lb must resolve to either a single control-plane node (shown here) or to a load balancer for control-plane nodes.
 ```conf
-10.0.6.254 node1 node1.madeof.glass k8s-control-plane-lb
-10.0.6.253 node2 node2.madeof.glass
-10.0.6.252 node3 node3.madeof.glass
+10.0.8.254 node1 tengig1 k8s-control-plane-lb
+10.0.8.253 node2 tengig2
+10.0.8.252 node3 tengig3
+10.0.8.251 node4 tengig4
 ```
 
 ## [ALL] /etc/modules-load.d/k8s.conf
@@ -99,6 +98,9 @@ sudo sysctl --system
 ```
 
 ## [ALL] /etc/crio/crio.conf
+
+Note: default capabilities should be significantly reduced from this configuration.
+
 ```toml
 [crio]
 [crio.api]
@@ -265,7 +267,7 @@ sudo $(kubeadm token create  --print-join-command)
 > - `kubectl exec -ti pingtest-xxxxxxx -- sh`
 >
 > Test ping and routing to the other pods and nodes
-> - `ping 10.0.6.254 -c 4`
+> - `ping 10.0.8.254 -c 4`
 > - `ping 8.8.8.8 -c 4`
 > - `ping 10.x.x.x -c 4`
 > - `ip route get 10.x.x.x`
@@ -335,7 +337,7 @@ EXPORT
 
         FSAL {
                 name = GLUSTER;
-                hostname = "10.0.6.254";
+                hostname = "10.0.8.254";
                 volume = "glass_bulk";
         }
 
@@ -355,7 +357,7 @@ EXPORT
 
         FSAL {
                 name = GLUSTER;
-                hostname = "10.0.6.254";
+                hostname = "10.0.8.254";
                 volume = "glass_cfg";
         }
         Access_type = RW;
