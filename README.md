@@ -333,7 +333,7 @@ NFS_CORE_PARAM {
 EXPORT
 {
         Export_Id = 1;
-        Path = "cfg";
+        Path = "bulk";
 
         FSAL {
                 name = GLUSTER;

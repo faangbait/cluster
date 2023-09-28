@@ -1,5 +1,5 @@
 nfs:
-  server: '10.0.6.254'
+  server: '10.0.8.254'
   path: '/bulk'
 storageClass:
   name: glass-bulk

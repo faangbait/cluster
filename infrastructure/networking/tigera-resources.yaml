@@ -1,0 +1,14 @@
+apiVersion: projectcalico.org/v3
+kind: BGPConfiguration
+metadata:
+  name: default
+  namespace: tigera-operator
+spec:
+  logSeverityScreen: Info
+  nodeToNodeMeshEnabled: true
+  nodeMeshMaxRestartTime: 120s
+  asNumber: 5650
+  serviceClusterIPs:
+    - cidr: 10.96.0.0/12
+  serviceLoadBalancerIPs:
+    - cidr: 10.0.16.0/24
