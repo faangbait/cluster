@@ -11,4 +11,4 @@ spec:
   serviceClusterIPs:
     - cidr: 10.96.0.0/12
   serviceLoadBalancerIPs:
-    - cidr: 10.0.16.0/24
+    - cidr: 10.0.15.0/24

@@ -109,7 +109,7 @@ service:
   enabled: true
   type: LoadBalancer
   spec:
-    loadBalancerIP: "10.0.16.129"
+    loadBalancerIP: "10.0.15.129"
 
 persistence:
   enabled: true
