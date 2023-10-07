@@ -8,7 +8,7 @@ terraform {
 }
 
 provider "aws" {
-  profile = "kubernetes"
+  profile = "kubernetes-limitless-dev"
   region = "us-east-1"
   shared_credentials_file = "~/.aws/credentials"
 }
@@ -28,10 +28,20 @@ variable "routes" {
             "minecraft.public",
             "registry.lab",
             "git.lab",
+            "mon",
+            "fetch.news",
+            "xmit.news",
+            "screen.news",
+            "shorts.news",
+            "conf.news",
+            "videos.news",
+            "docs.news",
+            "zines.news",
+            "audio.news",
+            "requests.news",
+            "search.home",
         ]
-        prod = [
-            "mon"
-        ]
+        prod = []
     }
 }
 
