@@ -3,7 +3,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: registry
+  name: dockerregistry
   namespace: lab
 spec:
   storageClassName: "glass-bulk"
@@ -17,10 +17,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: registry
+  name: dockerregistry
   namespace: lab
   labels:
-    app.kubernetes.io/name: registry
+    app.kubernetes.io/name: dockerregistry
     app.kubernetes.io/part-of: registry
     app.kubernetes.io/release: stable
   annotations:
@@ -56,7 +56,7 @@ spec:
       volumes:
         - name: bulk-registry
           persistentVolumeClaim:
-            claimName: registry
+            claimName: dockerregistry
 ---
 # Create Registry Service
 apiVersion: v1
