@@ -3,7 +3,7 @@
 ##### AUTH #####################################################################
 
 # Create Forward Auth Middleware
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -23,7 +23,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -43,7 +43,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -63,7 +63,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -83,7 +83,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -103,7 +103,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -123,7 +123,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -143,7 +143,7 @@ spec:
       - "Remote-User"
       - "Remote-Groups"
 ---
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: secure-auth
@@ -246,7 +246,7 @@ spec:
   # loadBalancerIP: "10.0.10.100"
 ---
 # Create Keycloak IngressRoute
-apiVersion: traefik.containo.us/v1alpha1
+apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: auth-ingress
