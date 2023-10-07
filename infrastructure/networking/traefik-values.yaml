@@ -56,6 +56,10 @@ ports:
       options: "default"
       domains:
         - main: "*.madeof.glass"
+          sans:
+            - "limitlessinteractive.com"
+            - "*.limitlessinteractive.com"
+
     # middlewares:
     #   - vault-secure-auth@kubernetescrd # TODO: breaks prod
 
