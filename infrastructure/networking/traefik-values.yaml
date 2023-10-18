@@ -99,16 +99,6 @@ tlsOptions:
       - CurveP384
     minVersion: VersionTLS12
 
-tlsStore:
-  default:
-    defaultGeneratedCert:
-      resolver: "letsencrypt"
-      domain:
-        main: "*.madeof.glass"
-        sans:
-          - "limitlessinteractive.com"
-          - "*.limitlessinteractive.com"
-
 service:
   enabled: true
   type: LoadBalancer
@@ -132,6 +122,9 @@ securityContext:
   capabilities:
     drop: [ALL]
   readOnlyRootFilesystem: true
+
+nodeSelector:
+  kubernetes.io/hostname: node1
 
 podSecurityContext:
   fsGroup: 65532
