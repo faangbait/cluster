@@ -18,7 +18,7 @@ This documentation details installing gluster and creating a new brick.
 
 ### Configure CentOS Release of Gluster
 ```sh
-sudo dnf install -y centos-release-gluster9
+sudo dnf install -y centos-release-gluster10 centos-release-nfs-ganesha4
 ```
 
 ### /etc/yum.repos.d/CentOS-Gluster-9.repo
@@ -35,8 +35,8 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-Storage
 ```sh
 sudo firewall-cmd --zone=public --add-service=glusterfs --permanent
 sudo firewall-cmd --reload
-sudo dnf install -y glusterfs glusterfs-libs glusterfs-server glusterfs-client
-sudo systemctl enable glusterfsd glusterd --now
+sudo yum install -y glusterfs glusterfs-libs glusterfs-server glusterfs-client glusterfs-ganesha --enablerepo=devel
+sudo systemctl enable glusterd --now
 ```
 
 ### Peer new server
