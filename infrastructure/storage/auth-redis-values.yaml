@@ -36,7 +36,7 @@ sentinel:
 networkPolicy:
   enabled: true
   ingressNSPodMatchLabels:
-    app.kubernetes.io/name: auth-web
+    app.kubernetes.io/name: authelia
 metrics:
   enabled: true
   image:

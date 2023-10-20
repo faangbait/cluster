@@ -38,6 +38,14 @@ envFrom:
   - secretRef:
       name: aws-credentials
 
+env:
+- name: LEGO_DISABLE_CNAME_SUPPORT
+  value: "true"
+
+providers:
+  kubernetesCRD:
+    allowCrossNamespace: true
+
 ports:
   metrics:
     port: 9999
@@ -54,11 +62,6 @@ ports:
       enabled: true
       certResolver: "letsencrypt"
       options: "default"
-      domains:
-        - main: "*.madeof.glass"
-          sans:
-            - "limitlessinteractive.com"
-            - "*.limitlessinteractive.com"
 
     # middlewares:
     #   - vault-secure-auth@kubernetescrd # TODO: breaks prod
@@ -71,8 +74,6 @@ ports:
       enabled: true
       options: ""
       certResolver: "letsencrypt"
-      domains:
-        - main: "*.madeof.glass"
 
   dht-udp:
     port: 51414
@@ -87,8 +88,6 @@ ports:
       enabled: true
       options: ""
       certResolver: "letsencrypt"
-      domains:
-        - main: "*.madeof.glass"
 
 tlsOptions:
   default:
@@ -116,7 +115,11 @@ certResolvers:
     email: root@madeof.glass
     dnsChallenge:
       provider: route53
-      delayBeforeCheck: 15
+      delayBeforeCheck: 30
+      resolvers:
+        - 1.1.1.1
+        - 8.8.8.8
+        - 9.9.9.9
     storage: /data/acme.json
 
 securityContext:
