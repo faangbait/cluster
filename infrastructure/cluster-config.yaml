@@ -22,6 +22,7 @@ apiServer:
     authorization-mode: "Node,RBAC"
     encryption-provider-config: "/etc/kubernetes/config/secret-encryption.yaml"
     enable-admission-plugins: "DefaultStorageClass"
+    feature-gates: SizeMemoryBackedVolumes=true
   extraVolumes:
     - name: config
       hostPath: "/etc/kubernetes/config"
