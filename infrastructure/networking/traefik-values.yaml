@@ -3,7 +3,7 @@ deployment:
     - name: regcred
   initContainers:
     - name: volume-permissions
-      image: traefik:v2.10.4
+      image: traefik:v2.10.5
       command: ["sh", "-c", "touch /data/acme.json; chown 65532 /data/acme.json; chmod -v 600 /data/acme.json"]
       securityContext:
         runAsNonRoot: false
@@ -116,6 +116,7 @@ certResolvers:
     email: root@madeof.glass
     dnsChallenge:
       provider: route53
+      delayBeforeCheck: 15
     storage: /data/acme.json
 
 securityContext:
