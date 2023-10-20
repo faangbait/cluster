@@ -129,7 +129,7 @@ data:
         policy: one_factor
       - domain: '*.public.madeof.glass'
         policy: bypass
-      - domain: 'screen.home.madeof.glass'
+      - domain: 'screen.news.madeof.glass'
         policy: bypass
       - domain: 'sso.madeof.glass'
         policy: bypass
