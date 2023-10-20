@@ -106,11 +106,19 @@ data:
     users:
       ss:
         displayname: "S Smith"
-        password: "$argon2id$v=19$m=65536,t=1,p=8$ZkduK2tlTFdhc3RWUFQ5Nw$s2rrkGn1VrZCK3jyB+98NBqxggUIZ8mpR6dBoRgdx/0"
+        password: "$argon2id$v=19$m=65536,t=3,p=4$jel1WjusitOk2lYBhSwUOA$KHlGhYh14UXpvJbvWMUroIm4Mk9MJ/6cR43646B5hVQ"
         email: "sam@madeof.glass"
         groups:
           - admins
           - dev
+      ah:
+        displayname: "A Her"
+        password: "$argon2id$v=19$m=65536,t=3,p=4$a9kS3yKRlWzZ6PWQpNxPJw$RDY6Dt1PY55Vb91m4B2qOAsnB84GiQoS+CGLrCr0ezo"
+        email: "sam@madeof.glass"
+        groups:
+          - admins
+          - dev
+        
   configuration.yml: |
     access_control:
       default_policy: deny
