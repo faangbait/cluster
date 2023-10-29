@@ -35,8 +35,9 @@ gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-Storage
 ```sh
 sudo firewall-cmd --zone=public --add-service=glusterfs --permanent
 sudo firewall-cmd --reload
-sudo yum install -y glusterfs glusterfs-libs glusterfs-server glusterfs-client glusterfs-ganesha --enablerepo=devel
+sudo yum install -y glusterfs glusterfs-libs glusterfs-server glusterfs-client glusterfs-ganesha nfs-ganesha-gluster --enablerepo=devel
 sudo systemctl enable glusterd --now
+
 ```
 
 ### Peer new server
