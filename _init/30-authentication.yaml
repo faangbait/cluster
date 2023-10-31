@@ -125,6 +125,8 @@ data:
       rules:
       - domain: '*.lab.madeof.glass'
         policy: one_factor
+      - domain: '*.mon.madeof.glass'
+        policy: one_factor
       - domain: '*.antennae.madeof.glass'
         policy: one_factor
       - domain: '*.archives.madeof.glass'

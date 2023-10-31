@@ -1,35 +1,88 @@
-##### HELM #####################################################################
-#
-# kubectl config set-context --current --namespace=observability
-#
-# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-# helm repo update
-# helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --values=infrastructure/prometheus-values.yaml
-#
-# kubectl apply -f _init/50-monitoring.yaml
-##### MONITORING ##############################################################
+defaultRules:
+  runbookUrl: "https://github.com/faangbait/runbooks"
 
-# This config doesn't actually do anything... prometheus uses an EmptyDir
-# Could make this the backing for the EmptyDir storage though.
+global:
+  imagePullSecrets:
+    - "regcred"
 
-prometheusSpec:
-  volumes:
-    - name: bulk-prometheus
-      glusterfs:
-        endpoints: glusterfs-cluster
-        path: glass_bulk
-  volumeMounts:
-  - mountPath: /prometheus
-    name: bulk-prometheus
-    subPath: "prometheus/prometheus"
+alertmanager:
+  ingress:
+    enabled: true
+    annotations: 
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+      traefik.ingress.kubernetes.io/router.tls.domains.0.main: alerts.mon.madeof.glass
+      traefik.ingress.kubernetes.io/router.middlewares: vault-chain-authelia-auth@kubernetescrd
+    hosts:
+      - alerts.mon.madeof.glass
+  service:
+    sessionAffinity: "ClientIP"
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "glass-cfg"
+          accessModes: ["ReadWriteMany"]
+          resources:
+            requests:
+              storage: 10Gi
+    portName: "alertmanager-web"
 
-alertmanagerSpec:
-  volumes:
-    - name: bulk-alertmanager
-      glusterfs:
-        endpoints: glusterfs-cluster
-        path: glass_bulk
-  volumeMounts:
-  - mountPath: /prometheus
-    name: bulk-alertmanager
-    subPath: "prometheus/alertmanager"
+grafana:
+  ingress:
+    enabled: true
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+      traefik.ingress.kubernetes.io/router.tls.domains.0.main: grafana.mon.madeof.glass
+      traefik.ingress.kubernetes.io/router.middlewares: vault-chain-authelia-auth@kubernetescrd
+    hosts:
+      - grafana.mon.madeof.glass
+  service:
+    portName: grafana-web
+
+prometheus:
+  ingress:
+    enabled: true
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+      traefik.ingress.kubernetes.io/router.tls.domains.0.main: prom.mon.madeof.glass
+      traefik.ingress.kubernetes.io/router.middlewares: vault-chain-authelia-auth@kubernetescrd
+    hosts:
+      - prom.mon.madeof.glass
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "glass-cfg"
+          accessModes: ["ReadWriteMany"]
+          resources:
+            requests:
+              storage: 10Gi
+    portName: "prometheus-web"
+    additionalScrapeConfigs:
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\\d+)?;(\\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+

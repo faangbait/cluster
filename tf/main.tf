@@ -27,7 +27,9 @@ variable "routes" {
             "sso",
             "minecraft.public",
             "registry.lab",
-            "mon",
+            "alerts.mon",
+            "grafana.mon",
+            "prom.mon",
             "fetch.news",
             "xmit.news",
             "screen.news",
@@ -36,6 +38,7 @@ variable "routes" {
             "music.news",
             "movies.news",
             "books.news",
+            "library.news",
         ]
         prod = []
     }
