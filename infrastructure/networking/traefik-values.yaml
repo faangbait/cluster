@@ -64,19 +64,19 @@ ports:
       options: "default"
 
     # middlewares:
-    #   - vault-secure-auth@kubernetescrd # TODO: breaks prod
+    #   - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
 
   dht-tcp:
-    port: 51413
+    port: 54321
     expose: true
     protocol: TCP
     tls:
       enabled: true
-      options: ""
       certResolver: "letsencrypt"
+      options: ""
 
-  dht-udp:
-    port: 51414
+  dht-udp: # TODO: Put this on the same port as tcp
+    port: 54322
     expose: true
     protocol: UDP
 
@@ -86,7 +86,6 @@ ports:
     protocol: TCP
     tls:
       enabled: true
-      options: ""
       certResolver: "letsencrypt"
 
 tlsOptions:
