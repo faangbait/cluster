@@ -5,19 +5,20 @@
 #
 # Gluster configuration:
 #
-# sudo gluster volume set glass-cfg performance.stat-prefetch off
-# sudo gluster volume set glass-cfg performance.read-ahead off
-# sudo gluster volume set glass-cfg performance.write-behind off
-# sudo gluster volume set glass-cfg performance.readdir-ahead off
-# sudo gluster volume set glass-cfg performance.io-cache off
-# sudo gluster volume set glass-cfg performance.quick-read off
-# sudo gluster volume set glass-cfg performance.open-behind off
-# sudo gluster volume set glass-cfg performance.strict-o-direct on
+# sudo gluster volume set glass_cfg performance.stat-prefetch off
+# sudo gluster volume set glass_cfg performance.read-ahead off
+# sudo gluster volume set glass_cfg performance.write-behind off
+# sudo gluster volume set glass_cfg performance.readdir-ahead off
+# sudo gluster volume set glass_cfg performance.io-cache off
+# sudo gluster volume set glass_cfg performance.quick-read off
+# sudo gluster volume set glass_cfg performance.open-behind off
+# sudo gluster volume set glass_cfg performance.strict-o-direct on
 # 
 # Install:
 # 
 # helm repo add bitnami https://charts.bitnami.com/bitnami
 # helm repo update
-# helm install postgresql bitnami/postgresql --version 13.2.0#
+# helm install postgresql bitnami/postgresql --version 13.2.0 -f infrastructure/storage/postgres-values.yaml
+#
 #
 ################################################################################

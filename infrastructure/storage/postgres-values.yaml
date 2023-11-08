@@ -1,0 +1,4 @@
+global:
+  imagePullSecrets:
+    - regcred
+  storageClass: glass-cfg
