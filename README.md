@@ -1,9 +1,7 @@
-# K8s Standup on Rocky 8.7
+# K8s Standup on Rocky 9.2
 
 ## Important
-This documentation assumes you've navigated to this directory in your file tree (`cat README.md` returns this doc).
-
-Run commands on all nodes unless prefixed with "[CP]" - these should run on a _single_ control-plane node.
+This documentation assumes you've navigated to this directory in your file tree (`cat README.md` returns this doc). Run commands on all nodes unless prefixed with "[CP]" - these should run on a _single_ control-plane node.
 
 ## Design Goals
 The goal of this project is to bootstrap a high-availability Kubernetes multi-node and GlusterFS cluster in a challenging environment: bare metal, heterogenous nodes, rootless containers as a critical first step to meeting NSA/CISA guidance for hardened Kubernetes. The project uses declarative provisioning for all resources; nothing was typed in a terminal except what is provided in this README or provisioned using the subfolders.
@@ -23,8 +21,8 @@ Interface: Trusted LAN
 ## [ALL] Set Preferred Kubernetes Version
 ```sh
 # e.g. for 1.24.8 from yum list --showduplicates kubeadm --disableexcludes=kubernetes
-export VERSION=1.26
-export PATCHVERSION=1
+export VERSION=1.28
+export PATCHVERSION=2
 ```
 
 ## [ALL] /etc/hosts
