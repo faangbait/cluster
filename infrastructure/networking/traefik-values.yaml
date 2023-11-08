@@ -3,7 +3,7 @@ deployment:
     - name: regcred
   initContainers:
     - name: volume-permissions
-      image: traefik:v2.10.5
+      image: busybox:1.28
       command: ["sh", "-c", "touch /data/acme.json; chown 65532 /data/acme.json; chmod -v 600 /data/acme.json"]
       securityContext:
         runAsNonRoot: false
@@ -53,18 +53,19 @@ ports:
   web:
     port: 8000
     expose: true
-    redirectTo: websecure
+    redirectTo: 
+      port: websecure
 
   websecure:
     port: 8443
     expose: true
+    middlewares:
+      - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
     tls:
       enabled: true
       certResolver: "letsencrypt"
       options: "default"
 
-    # middlewares:
-    #   - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
 
   dht-tcp:
     port: 54321
