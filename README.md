@@ -377,3 +377,9 @@ Should resolve: http://127.0.0.1:9000/dashboard/
 ```sh
 kubectl port-forward $(kubectl get pods --selector "app.kubernetes.io/name=traefik" --output=name) 9000:9000
 ```
+
+## Label High-Memory nodes
+```sh
+kubectl label nodes node1 highmem=true
+kubectl label nodes node4 highmem=true
+```
