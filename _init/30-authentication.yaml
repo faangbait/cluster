@@ -311,11 +311,11 @@ spec:
           name: auth-configmap
         resources:
           requests:
-            memory: 1Gi
-            cpu: "2"
+            memory: 256Mi
+            cpu: ".1"
           limits:
-            memory: 2Gi # Probably too high
-            cpu: "2"
+            memory: 512Mi
+            cpu: ".25"
       volumes:
         - name: cfg-auth
           persistentVolumeClaim:
@@ -365,9 +365,6 @@ spec:
   routes:
     - match: Host(`sso.madeof.glass`)
       kind: Rule
-      middlewares:
-        - name: chain-authelia
-          namespace: vault
       services:
         - kind: Service
           name: authelia
