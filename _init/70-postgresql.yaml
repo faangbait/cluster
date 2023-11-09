@@ -18,7 +18,7 @@
 # 
 # helm repo add bitnami https://charts.bitnami.com/bitnami
 # helm repo update
-# helm install postgresql bitnami/postgresql --version 13.2.0 -f infrastructure/storage/postgres-values.yaml
+# helm install postgresql bitnami/postgresql -f infrastructure/storage/postgres-values.yaml
 #
 #
 ################################################################################
