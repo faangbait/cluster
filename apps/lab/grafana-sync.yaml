@@ -1,0 +1,99 @@
+# kubectl -n observability create secret generic grafana-service-account \
+# --from-literal=SERVICE_ACCOUNT_TOKEN=$(read -p "Service Account Token="; echo $REPLY)
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: grafana-dashboards
+  namespace: observability
+spec:
+  storageClassName: "glass-cfg"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 150Mi
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: grafana-sync
+  namespace: observability
+data:
+  sync.py: |
+    #!/usr/bin/env python3
+    import requests
+    import json
+    import os
+
+    uri="http://kube-prometheus-stack-grafana.observability.svc.cluster.local/api"
+
+    def main():
+        print("syncing grafana dashboards")
+
+        headers = {
+          "Content-type": "application/json",
+          "Accept": "application/json",
+          "Authorization": f"Bearer {os.getenv('SERVICE_ACCOUNT_TOKEN')}"
+        }
+
+        r = requests.get(f"{uri}/search", headers=headers)
+        for entry in r.json():
+            s = requests.get(f"{uri}/dashboards/uid/{entry['uid']}", headers=headers)
+            dashboard_json = json.dumps(s.json()['dashboard'])
+            slug = s.json()['meta']['slug']
+            with open(f"/dashboards/{slug}.json","w") as outfile:
+                outfile.write(dashboard_json)
+            print(f"wrote {slug}.json")
+    
+    if __name__ == '__main__':
+        main()
+
+  requirements.txt: |
+    requests<3
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: grafana-sync
+  namespace: observability
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          imagePullSecrets:
+            - name: regcred
+          containers:
+          - name: grafana-sync
+            image: python:3.9
+            command:
+              - sh
+              - -c
+              - pip install --no-cache-dir -r /opt/requirements.txt && python /opt/sync.py
+            envFrom:
+              - secretRef:
+                  name: grafana-service-account
+            volumeMounts:
+            - mountPath: /opt
+              name: grafana-sync
+            - mountPath: /dashboards
+              name: grafana-dashboards
+            resources:
+              requests:
+                cpu: ".25"
+                memory: "256Mi"
+              limits:
+                cpu: ".5"
+                memory: "512Mi"
+          volumes:
+            - name: grafana-sync
+              configMap:
+                name: grafana-sync
+            - name: grafana-dashboards
+              persistentVolumeClaim:
+                claimName: grafana-dashboards
+          restartPolicy: OnFailure
