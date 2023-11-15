@@ -123,6 +123,14 @@ data:
     access_control:
       default_policy: deny
       rules:
+      - domain: '*.public.madeof.glass'
+        policy: bypass
+      - domain: 'registry.lab.madeof.glass'
+        policy: bypass
+      - domain: 'screen.news.madeof.glass'
+        policy: bypass
+      - domain: 'sso.madeof.glass'
+        policy: bypass
       - domain: '*.lab.madeof.glass'
         policy: one_factor
       - domain: '*.mon.madeof.glass'
@@ -137,12 +145,7 @@ data:
         policy: one_factor
       - domain: '*.home.madeof.glass'
         policy: one_factor
-      - domain: '*.public.madeof.glass'
-        policy: bypass
-      - domain: 'screen.news.madeof.glass'
-        policy: bypass
-      - domain: 'sso.madeof.glass'
-        policy: bypass
+
     authentication_backend:
       file:
         path: /configmap/users.yml
