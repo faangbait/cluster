@@ -46,9 +46,18 @@ spec:
         env:
         - name: REGISTRY_STORAGE_DELETE_ENABLED
           value: "true"
+        - name: REGISTRY_AUTH
+          value: "htpasswd"
+        - name: REGISTRY_AUTH_HTPASSWD_REALM
+          value: "Registry Realm"
+        - name: REGISTRY_AUTH_HTPASSWD_PATH
+          value: "/auth/htpasswd"
         volumeMounts:
         - mountPath: /var/lib/registry
           name: bulk-registry
+        - mountPath: /auth
+          name: htpasswd
+          readOnly: true
         resources:
           limits:
             memory: 128Mi
@@ -57,6 +66,12 @@ spec:
         - name: bulk-registry
           persistentVolumeClaim:
             claimName: dockerregistry
+        - name: htpasswd
+          secret:
+            secretName: registry-htpasswd
+            items:
+            - key: pass
+              path: htpasswd
 ---
 # Create Registry Service
 apiVersion: v1
