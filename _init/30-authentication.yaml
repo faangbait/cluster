@@ -123,6 +123,8 @@ data:
     access_control:
       default_policy: deny
       rules:
+      - domain: 'madeof.glass'
+        policy: bypass
       - domain: '*.public.madeof.glass'
         policy: bypass
       - domain: 'registry.lab.madeof.glass'

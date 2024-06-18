@@ -27,6 +27,7 @@ spec:
       containers:
       - name: windowpane-web
         image: registry.lab.madeof.glass/windowpane:v1.0.0
+        imagePullPolicy: Always
         resources:
           limits:
             memory: 256Mi

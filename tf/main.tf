@@ -39,6 +39,7 @@ variable "routes" {
             "movies.news",
             "books.news",
             "library.news",
+            "ai.home",
         ]
         prod = []
     }
@@ -71,7 +72,7 @@ variable "txt_records" {
 
     default = {
         glass = [
-            "v=spf1 include:spf.tutanota.de include:amazonses.com -all",
+            "v=spf1 include:amazonses.com -all",
             ]
         prod = [
             "v=spf1 include:amazonses.com ~all",
@@ -151,33 +152,14 @@ resource "aws_route53_record" "glass_mx" {
     name        = ""
     type        = "MX"
     ttl         = 3600
-    # records     = ["10 mail.tutanota.de"]
     records     = ["10 inbound-smtp.us-east-1.amazonaws.com"]
 }
 
 # Change for custom DMARC records on dev
-resource "aws_route53_record" "glass_email" {
+resource "aws_route53_record" "glass_dmarc" {
     zone_id     = var.zones.glass
-    name        = each.key
-    type        = "CNAME"
+    name        = "_dmarc"
+    type        = "TXT"
     ttl         = 3600
-    records     = each.value
-    for_each    = {
-        _dmarc = ["v=DMARC1;p=quarantine;pct=100;fo=1"]
-        _mta-sts = ["mta-sts.tutanota.de."]
-    }
+    records     = ["v=DMARC1;p=quarantine;pct=100;fo=1"]
 }
-
-# Change for custom DKIM records on dev
-resource "aws_route53_record" "glass_dkim" {
-    zone_id     = var.zones.glass
-    name        = "${each.key}._domainkey"
-    type        = "CNAME"
-    ttl         = 3600
-    records     = each.value
-    for_each    = {
-        s1 = ["s1.domainkey.tutanota.de."]
-        s2 = ["s2.domainkey.tutanota.de."]
-    }
-}
-
