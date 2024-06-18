@@ -315,61 +315,6 @@ These are highly workflow-dependent, but this is what I use.
 kubectl apply -f _init
 ```
 
-## Notes for v1.26+
-v1.26 removes native gluster support. I've swapped to `nfs-ganesha`:
-
-## [CP] /etc/ganesha/ganesha.conf
-```sh
-NFS_CORE_PARAM {
-        mount_path_pseudo = true;
-        Protocols = 3,4;
-}
-
-EXPORT_DEFAULTS {
-        Access_Type = RW;
-}
-
-
-EXPORT
-{
-        Export_Id = 1;
-        Path = "/bulk";
-
-        FSAL {
-                name = GLUSTER;
-                hostname = "10.0.8.254";
-                volume = "glass_bulk";
-        }
-
-        Squash = No_root_squash;
-        Pseudo = "/bulk";
-        SecType = "sys";
-}
-
-EXPORT
-{
-        Export_Id = 2;
-        Path = "/cfg"; 
-
-        FSAL {
-                name = GLUSTER;
-                hostname = "10.0.8.254";
-                volume = "glass_cfg";
-        }
-
-        Squash = No_root_squash;
-        Pseudo = "/cfg";
-        SecType	= "sys";
-}
-
-LOG {
-        Default_Log_Level = WARN;
-}
-
-```
-
-`sudo systemctl enable nfs-ganesha --now`
-
 ## Verify Installation Success (You Hope)
 Should resolve: http://127.0.0.1:9000/dashboard/
 ```sh

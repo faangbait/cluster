@@ -10,7 +10,7 @@ w # write
 ## Create physical volume
 `sudo pvcreate --dataalignment 256K /dev/sdx1`
 
-# Adding a new server as a Gluster node (Rocky 8.7)
+# Adding a new server as a Gluster node (Rocky 9.4)
 This documentation details installing gluster and creating a new brick.
 
 ---
@@ -18,26 +18,80 @@ This documentation details installing gluster and creating a new brick.
 
 ### Configure CentOS Release of Gluster
 ```sh
-sudo dnf install -y centos-release-gluster10 centos-release-nfs-ganesha4
+sudo dnf install -y centos-release-gluster11 centos-release-nfs-ganesha4
+
+# Recommended for package stability:
+# sudo sed -i -e "s/enabled=1/enabled=0/g" /etc/yum.repos.d/CentOS-Gluster-11.repo
+# sudo sed -i -e "s/enabled=1/enabled=0/g" /etc/yum.repos.d/CentOS-NFS-Ganesha-4.repo
 ```
 
-### /etc/yum.repos.d/CentOS-Gluster-9.repo
-```ini
-[centos-gluster9]
-name=CentOS-$releasever - Gluster 9
-baseurl=https://dl.rockylinux.org/vault/centos/8.5.2111/storage/x86_64/gluster-9/
-gpgcheck=1
-enabled=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-SIG-Storage
+### Install Gluster and NFS-Ganesha
+```sh
+sudo dnf install -y --enablerepo=centos-nfs-ganesha-4 --enablerepo=devel \
+glusterfs glusterfs-libs glusterfs-server glusterfs-client nfs-ganesha-gluster nfs-ganesha
 ```
 
-### Configure Firewall and Install Gluster
+### Configure NFS-Ganesha
+#### /etc/ganesha/ganesha.conf
+```sh
+NFS_CORE_PARAM {
+        mount_path_pseudo = true;
+        Protocols = 3,4;
+}
+
+EXPORT_DEFAULTS {
+        Access_Type = RW;
+}
+
+
+EXPORT
+{
+        Export_Id = 1;
+        Path = "/bulk";
+
+        FSAL {
+                name = GLUSTER;
+                hostname = "10.0.8.254";
+                volume = "glass_bulk";
+        }
+
+        Squash = No_root_squash;
+        Pseudo = "/bulk";
+        SecType = "sys";
+}
+
+EXPORT
+{
+        Export_Id = 2;
+        Path = "/cfg"; 
+
+        FSAL {
+                name = GLUSTER;
+                hostname = "10.0.8.254";
+                volume = "glass_cfg";
+        }
+
+        Squash = No_root_squash;
+        Pseudo = "/cfg";
+        SecType	= "sys";
+}
+
+LOG {
+        Default_Log_Level = WARN;
+}
+```
+
+### Configure Firewall
 ```sh
 sudo firewall-cmd --zone=public --add-service=glusterfs --permanent
 sudo firewall-cmd --reload
-sudo yum install -y glusterfs glusterfs-libs glusterfs-server glusterfs-client glusterfs-ganesha nfs-ganesha-gluster --enablerepo=devel
-sudo systemctl enable glusterd --now
+```
 
+### Enable Gluster and NFS-Ganesha
+```sh
+sudo systemctl enable glusterd --now
+sudo systemctl disable nfs-server --now
+sudo systemctl enable nfs-ganesha --now
 ```
 
 ### Peer new server
