@@ -1,4 +1,4 @@
-# K8s Standup on Rocky 9.2
+# K8s Standup on Rocky 9.4
 
 ## Important
 This documentation assumes you've navigated to this directory in your file tree (`cat README.md` returns this doc). Run commands on all nodes unless prefixed with "[CP]" - these should run on a _single_ control-plane node.
