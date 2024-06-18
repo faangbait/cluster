@@ -63,7 +63,7 @@ enabled=1
 gpgcheck=1
 gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
 exclude=kubelet kubeadm kubectl
-
+```
 ## [ALL] /etc/NetworkManager/conf.d/calico.conf
 ```bash
 [keyfile]
