@@ -84,6 +84,7 @@ LOG {
 ### Configure Firewall
 ```sh
 sudo firewall-cmd --zone=public --add-service=glusterfs --permanent
+sudo firewall-cmd --add-service=nfs
 sudo firewall-cmd --reload
 ```
 
