@@ -38,9 +38,9 @@ envFrom:
   - secretRef:
       name: aws-credentials
 
-env:
-- name: LEGO_DISABLE_CNAME_SUPPORT
-  value: "true"
+# env:
+# - name: LEGO_DISABLE_CNAME_SUPPORT
+#   value: "true"
 
 providers:
   kubernetesCRD:
@@ -52,13 +52,15 @@ ports:
 
   web:
     port: 8000
-    expose: true
+    expose: 
+      default: true
     redirectTo: 
       port: websecure
 
   websecure:
     port: 8443
-    expose: true
+    expose: 
+      default: true
     middlewares:
       - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
     tls:
@@ -66,10 +68,10 @@ ports:
       certResolver: "letsencrypt"
       options: "default"
 
-
   dht-tcp:
     port: 54321
-    expose: true
+    expose: 
+      default: true
     protocol: TCP
     tls:
       enabled: true
@@ -78,12 +80,14 @@ ports:
 
   dht-udp: # TODO: Put this on the same port as tcp
     port: 54322
-    expose: true
+    expose: 
+      default: true
     protocol: UDP
 
   minecraft:
     port: 25565
-    expose: true
+    expose: 
+      default: true
     protocol: TCP
     tls:
       enabled: true
@@ -115,10 +119,14 @@ certResolvers:
     email: root@madeof.glass
     dnsChallenge:
       provider: route53
-      delayBeforeCheck: 30
+      delayBeforeCheck: 60
+      disablePropagationCheck: true
       resolvers:
         - 1.1.1.1
+        - 46.227.67.134
+        - 192.165.9.158
         - 8.8.8.8
+        - 8.8.4.4
         - 9.9.9.9
     storage: /data/acme.json
 
