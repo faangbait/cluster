@@ -1,0 +1,17 @@
+# ansible-playbook update.yaml -i node1,node2,node4,localhost
+# prepare to be rebooted
+---
+- name: Update servers
+  hosts: all
+  serial: 1
+  become: true
+
+  tasks:
+  - name: dnf update
+    dnf:
+      name: "*"
+      state: latest
+    
+  - name: reboot
+    reboot:
+      reboot_timeout: 3600
