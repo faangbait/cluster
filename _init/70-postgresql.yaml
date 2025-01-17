@@ -60,5 +60,5 @@
 # # Local
 # k scale --replicas=1 statefulset/{lidarr,sonarr,radarr,readarr} -n news
 # sudo rm -rf /mnt/replicated/pvc/lab/data-postgresql-0/old_data
-
+# 
 ################################################################################

@@ -114,21 +114,22 @@ persistence:
   name: "certs"
   path: "/data"
 
-certResolvers:
+certificatesResolvers:
   letsencrypt:
-    email: root@madeof.glass
-    dnsChallenge:
-      provider: route53
-      delayBeforeCheck: 60
-      disablePropagationCheck: true
-      resolvers:
-        - 1.1.1.1
-        - 46.227.67.134
-        - 192.165.9.158
-        - 8.8.8.8
-        - 8.8.4.4
-        - 9.9.9.9
-    storage: /data/acme.json
+    acme:
+      email: root@madeof.glass
+      dnsChallenge:
+        provider: route53
+        delayBeforeCheck: 60
+        disablePropagationCheck: true
+        resolvers:
+          - 1.1.1.1
+          - 46.227.67.134
+          - 192.165.9.158
+          - 8.8.8.8
+          - 8.8.4.4
+          - 9.9.9.9
+      storage: /data/acme.json
 
 securityContext:
   capabilities:
