@@ -20,5 +20,45 @@
 # helm repo update
 # helm install postgresql bitnami/postgresql -f infrastructure/storage/postgres-values.yaml
 #
+# # Upgrading major PostgreSQL Versions:
 #
+# # Local
+# helm repo update
+# k scale --replicas=0 statefulset/{lidarr,sonarr,radarr,readarr} -n news
+# k exec -it pod/postgresql-client -n lab -- /bin/sh
+#
+# # Shell
+# read PGPASSWORD
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -f dump.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d radarr-main -f radarr-main.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d readarr-main -f readarr-main.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d lidarr-main -f lidarr-main.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d sonarr-main -f sonarr-main.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d radarr-log -f radarr-log.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d readarr-log -f readarr-log.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d lidarr-log -f lidarr-log.sql
+# PGPASSWORD=${PGPASSWORD} pg_dump -w -U postgres -h postgresql.lab.svc.cluster.local -d sonarr-log -f sonarr-log.sql
+#
+# # Local
+# k scale --replicas=0 statfulset/postgresql-0 -n lab
+# sudo mv /mnt/replicated/pvc/lab/data-postgresql-0/data /mnt/replicated/pvc/lab/data-postgresql-0/old_data 
+# helm upgrade postgresql bitnami/postgresql -n lab -f infrastructure/storage/postgres-values.yaml
+#
+# # Shell
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local < dump.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local radarr-main < radarr-main.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local readarr-main < readarr-main.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local lidarr-main < lidarr-main.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local sonarr-main < sonarr-main.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local radarr-log < radarr-log.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local readarr-log < readarr-log.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local lidarr-log < lidarr-log.sql
+# PGPASSWORD=${PGPASSWORD} psql -w -U postgres -h postgresql.lab.svc.cluster.local sonarr-log < sonarr-log.sql
+#
+# exit
+#
+# # Local
+# k scale --replicas=1 statefulset/{lidarr,sonarr,radarr,readarr} -n news
+# sudo rm -rf /mnt/replicated/pvc/lab/data-postgresql-0/old_data
+
 ################################################################################

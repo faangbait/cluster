@@ -5,3 +5,5 @@ global:
   postgresql:
     auth:
       username: kube
+  resourcePreset: "small"
+
