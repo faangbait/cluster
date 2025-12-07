@@ -20,9 +20,9 @@ Interface: Trusted LAN
 
 ## [ALL] Set Preferred Kubernetes Version
 ```sh
-# e.g. for 1.24.8 from yum list --showduplicates kubeadm --disableexcludes=kubernetes
+# e.g. for 1.28.4 from yum list --showduplicates kubeadm --disableexcludes=kubernetes
 export VERSION=1.28
-export PATCHVERSION=2
+export PATCHVERSION=4
 ```
 
 ## [ALL] /etc/hosts
@@ -62,8 +62,18 @@ baseurl=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/
 enabled=1
 gpgcheck=1
 gpgkey=https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key
-exclude=kubelet kubeadm kubectl
 ```
+
+## [ALL] /etc/yum.repos.d/cri-o.repo
+```ini
+[cri-o]
+name=CRI-O
+baseurl=https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/rpm/repodata/repomd.xml.key
+```
+
 ## [ALL] /etc/NetworkManager/conf.d/calico.conf
 ```bash
 [keyfile]
@@ -73,7 +83,20 @@ unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan
 ## [ALL] Setup Prerequisites
 ```sh
 sudo dnf update -y
-sudo dnf install -y iproute-tc chrony yum-utils yum-plugin-versionlock git
+
+sudo dnf install -y \
+    conntrack \
+    container-selinux \
+    ebtables \
+    ethtool \
+    iptables \
+    socat \
+    iproute-tc \
+    chrony \
+    yum-utils \
+    yum-plugin-versionlock \
+    git
+
 sudo systemctl enable --now chronyd
 
 sudo swapoff -a
@@ -91,6 +114,22 @@ sudo firewall-cmd --reload
 sudo modprobe overlay
 sudo modprobe br_netfilter
 sudo sysctl --system
+```
+
+## [ALL] Install Kubernetes / CRI-O
+```sh
+dnf install -y --repo cri-o --repo kubernetes \
+    cri-o-$VERSION.$PATCHVERSION \
+    kubeadm-$VERSION.$PATCHVERSION \
+    kubectl-$VERSION.$PATCHVERSION \
+    kubelet-$VERSION.$PATCHVERSION \
+    --disableexcludes=kubernetes --disableexcludes=cri-o
+
+sudo yum versionlock kubelet kubeadm kubectl cri-o
+sudo systemctl enable --now kubelet crio
+
+export VERSION=;export PATCHVERSION=
+
 ```
 
 ## [ALL] /etc/crio/crio.conf
@@ -130,26 +169,9 @@ metrics_port = 9537
 ```
 
 
-## [ALL] Install CRI-O
-CRI-O is the RHEL-supported container engine, as it powers OpenShift. It's designed to play nice with rootless containers.
-```sh
-sudo curl -L -o /etc/yum.repos.d/devel:kubic:libcontainers:stable.repo https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/CentOS_8/devel:kubic:libcontainers:stable.repo
-
-sudo curl -L -o /etc/yum.repos.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.repo https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/CentOS_8/devel:kubic:libcontainers:stable:cri-o:$VERSION.repo
-
-sudo dnf install -y crio
-sudo systemctl enable --now crio
-```
-
-## [ALL] Install Kubernetes / Helm
+## [ALL] Install Helm
 ```sh
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-sudo dnf install -y kubelet-$VERSION.$PATCHVERSION kubeadm-$VERSION.$PATCHVERSION kubectl-$VERSION.$PATCHVERSION --disableexcludes=kubernetes
-sudo yum versionlock kubelet kubeadm kubectl
-sudo systemctl enable --now kubelet
-
-export VERSION=;export PATCHVERSION=
 ```
 
 >## PASS/FAIL: Infrastructure
