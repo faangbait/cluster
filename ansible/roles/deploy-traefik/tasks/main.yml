@@ -1,0 +1,162 @@
+# TODO:
+# kubectl create secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
+
+- name: Add Traefik Chart Repo
+  kubernetes.core.helm_repository:
+    name: traefik
+    repo_url: https://helm.traefik.io/traefik
+
+- name: Deploy Latest Traefik
+  kubernetes.core.helm:
+    name: traefik
+    chart_ref: traefik/traefik
+    release_namespace: traefik
+    create_namespace: true
+    values:
+      deployment:
+        imagePullSecrets:
+          - name: regcred
+        initContainers:
+          - name: volume-permissions
+            image: busybox:1.28
+            command: ["sh", "-c", "touch /data/acme.json; chown 65532 /data/acme.json; chmod -v 600 /data/acme.json"]
+            securityContext:
+              runAsNonRoot: false
+              runAsGroup: 0
+              runAsUser: 0
+            volumeMounts:
+            - mountPath: /data
+              name: certs
+
+      volumes:
+        - name: traefik-configmap
+          mountPath: "/config"
+          type: configMap
+
+      logs:
+        general:
+          level: WARN
+        access:
+          enabled: true
+          filePath: "/tmp/access.log"
+          bufferingSize: 100
+
+      globalArguments:
+        - "--global.checknewversion"
+
+      additionalArguments:
+        - "--api.insecure=true"
+        - "--providers.file.directory=/config"
+        # TODO: https://doc.traefik.io/traefik/providers/http/
+
+      envFrom:
+        - secretRef:
+            name: aws-credentials
+
+      # env:
+      # - name: LEGO_DISABLE_CNAME_SUPPORT
+      #   value: "true"
+
+      providers:
+        kubernetesCRD:
+          allowCrossNamespace: true
+
+      ports:
+        metrics:
+          port: 9999
+
+        web:
+          port: 8000
+          expose: 
+            default: true
+          redirectTo: 
+            port: websecure
+
+        websecure:
+          port: 8443
+          expose: 
+            default: true
+          middlewares:
+            - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
+          tls:
+            enabled: true
+            certResolver: "letsencrypt"
+            options: "default"
+
+        dht-tcp:
+          port: 54321
+          expose: 
+            default: true
+          protocol: TCP
+          tls:
+            enabled: true
+            certResolver: "letsencrypt"
+            options: ""
+
+        dht-udp: # TODO: Put this on the same port as tcp
+          port: 54322
+          expose: 
+            default: true
+          protocol: UDP
+
+        minecraft:
+          port: 25565
+          expose: 
+            default: true
+          protocol: TCP
+          tls:
+            enabled: true
+            certResolver: "letsencrypt"
+
+      tlsOptions:
+        default:
+          sniStrict: true
+          preferServerCipherSuites: true
+          curvePreferences:
+            - CurveP521
+            - CurveP384
+          minVersion: VersionTLS12
+
+      service:
+        enabled: true
+        type: LoadBalancer
+        spec:
+          loadBalancerIP: "10.0.15.129"
+
+      persistence:
+        enabled: true
+        storageClass: "glass-cfg"
+        name: "certs"
+        path: "/data"
+
+      certificatesResolvers:
+        letsencrypt:
+          acme:
+            email: root@madeof.glass
+            dnsChallenge:
+              provider: route53
+              delayBeforeCheck: 60
+              disablePropagationCheck: true
+              resolvers:
+                - 1.1.1.1
+                - 46.227.67.134
+                - 192.165.9.158
+                - 8.8.8.8
+                - 8.8.4.4
+                - 9.9.9.9
+            storage: /data/acme.json
+
+      securityContext:
+        capabilities:
+          drop: [ALL]
+        readOnlyRootFilesystem: true
+
+      nodeSelector:
+        kubernetes.io/hostname: node1
+
+      podSecurityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: "OnRootMismatch"
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532

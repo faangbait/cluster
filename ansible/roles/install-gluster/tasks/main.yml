@@ -1,0 +1,98 @@
+- name: Enable Extras repo
+  community.general.dnf_config_manager:
+    name: extras
+    state: enabled
+
+- name: Install centos SIGs
+  ansible.builtin.dnf:
+    state: present
+    name:
+      - centos-release-gluster11
+      - centos-release-nfs-ganesha4
+
+- name: Install gluster
+  ansible.builtin.dnf:
+    state: present
+    name:
+      - glusterfs
+      - glusterfs-libs
+      - glusterfs-server
+      - glusterfs-client
+      - nfs-ganesha-gluster
+      - nfs-ganesha
+    enablerepo:
+      - devel
+      - centos-nfs-ganesha-4
+
+- name: Version Lock gluster
+  community.general.yum_versionlock:
+    name:
+      - glusterfs
+      - glusterfs-libs
+      - glusterfs-server
+      - nfs-ganesha-gluster
+      - nfs-ganesha
+
+- name: Add Ganesha conf
+  ansible.builtin.copy:
+    src: templates/ganesha.conf
+    dest: /etc/ganesha/ganesha.conf
+    mode: '0644'
+
+- name: Configure Firewall
+  ansible.posix.firewalld:
+    state: enabled
+    permanent: true
+    service: "{{ item }}"
+    zone: "public"
+  loop:
+    - glusterfs
+    - nfs
+
+- name: Enable gluster
+  ansible.builtin.systemd_service:
+    state: started
+    enabled: true
+    name: "{{ item }}"
+  loop:
+    - glusterd
+    - nfs-ganesha
+
+- name: Add client mount-points
+  ansible.builtin.file:
+    state: directory
+    path: "{{ item }}"
+    attributes: +i
+  loop:
+    - /mnt/replicated
+    - /mnt/bulk
+
+- name: Add fstab entries
+  ansible.builtin.blockinfile:
+    path: /etc/fstab
+    block: |
+      localhost:/glass_cfg /mnt/replicated glusterfs defaults,_netdev,x-systemd.requires=glusterd.service,x-systemd.automount 0 0
+      localhost:/glass_bulk /mnt/bulk glusterfs defaults,_netdev,x-systemd.requires=glusterd.service,x-systemd.automount 0 0
+    backup: true
+
+- name: Configure Thin Pool
+  ansible.builtin.replace:
+    path: /etc/lvm/lvm.conf
+    regexp: "# thin_pool_autoextend_threshold.*"
+    replace: "thin_pool_autoextend_threshold = 70"
+
+- name: Configure existing bricks
+  ansible.builtin.shell: |
+    for brick in $(ls /dev/mapper/gluster*-brickvol); do
+      brickno=$(basename ${brick} | sed -e "s/^gluster//" -e "s/-brickvol$//")
+      brickpath=/data/glusterfs/glass${brickno}
+
+      sudo mkdir -p ${brickpath}
+      sudo chattr +i ${brickpath}
+
+      sudo echo "/dev/mapper/gluster${brickno}-brickvol /data/glusterfs/glass${brickno} xfs rw,inode64,noatime,nouuid 1 2" | tee -a /etc/fstab
+    done
+    
+    sudo systemctl daemon-reload
+  args:
+    creates: /data/glusterfs

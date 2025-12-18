@@ -1,4 +1,4 @@
-# ansible-playbook update.yaml -i node1,node2,node4,localhost
+# ansible-playbook 99-dnf-update.yaml -i inventory
 # prepare to be rebooted
 ---
 - name: Update servers

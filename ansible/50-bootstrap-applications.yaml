@@ -1,0 +1,50 @@
+- name: Bootstrap Kubernetes Applications
+  hosts: controlplane
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Set facts
+      ansible.builtin.set_fact:
+        calico_version: v3.31.2
+
+    - name: Deploy Calico
+      ansible.builtin.import_role:
+        name: deploy-calico
+
+# - name: Confirm Networking (PASS/FAIL) # TODO
+#   ansible.builtin.shell: |
+#     # Confirm that all pods are running:
+
+#         watch kubectl get pods -n calico-system
+
+#     # Confirm that pods can talk to each other:
+
+#         kubectl create deployment pingtest --image=busybox --replicas=3 -- sleep infinity
+#         kubectl get pods --selector=app=pingtest --output=wide
+#         kubectl exec -ti pingtest-xxxxxxx -- sh
+
+#     # Test ping and routing to the other pods and nodes
+
+#         ping 10.0.8.254 -c 4
+#         ping 8.8.8.8 -c 4
+#         ping 10.x.x.x -c 4
+#         ip route get 10.x.x.x
+
+#     # Clean up tests
+
+#         kubectl delete deployment pingtest
+
+    - name: Deploy MetalLB
+      ansible.builtin.import_role:
+        name: deploy-metallb
+
+    # - name: Deploy Traefik
+    #   ansible.builtin.import_role:
+    #     name: deploy-traefik
+
+
+# ## [TODO] Label High-Memory nodes
+# ```sh
+# kubectl label nodes node1 highmem=true
+# kubectl label nodes node4 highmem=true
+# ```

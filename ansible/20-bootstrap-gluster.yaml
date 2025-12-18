@@ -1,0 +1,19 @@
+- name: Bootstrap Gluster
+  hosts: cluster
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Set up Gluster
+      ansible.builtin.import_role:
+        name: install-gluster
+
+    - name: Set facts
+      ansible.builtin.set_fact:
+        nodes_to_peer: []
+
+    - name: Peer New Nodes
+      when: inventory_hostname == "k8s-control-plane-lb"
+      ansible.builtin.shell: "gluster peer probe {{ item }}"
+      loop: "{{ nodes_to_peer }}"
+
+# when complete, move to 30-bootstrap-control-plane

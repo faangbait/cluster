@@ -1,0 +1,27 @@
+# Build a new Brick
+# This converts /dev/sdx into a brick named gluster5. The resulting brick can be combined with other bricks to form a gluster volume.
+#
+# Nuke existing drive (DANGEROUS)
+# dd if=/dev/zero of=/dev/sdx bs=1k count=1
+# 
+# Create volume group
+# sudo vgcreate gluster5 /dev/sdx1
+# 
+# Create thinpool
+# sudo lvcreate --thinpool gluster5/thin_pool --size 1T  --chunksize 256K --poolmetadatasize 16G --zero n
+# 
+# Create thin logical volume
+# sudo lvcreate -V 1G -T gluster5/thin_pool -n brickvol
+# 
+# Extend the LV to the full size of disk
+# sudo lvextend /dev/gluster5/brickvol /dev/sdx1
+# 
+# Make XFS filesystem
+# sudo mkfs.xfs -i size=512 -n size=8192 /dev/gluster5/brickvol
+# 
+# Add to /etc/fstab
+# echo "/dev/mapper/gluster5-brickvol /data/glusterfs/glass5 xfs rw,inode64,noatime,nouuid 1 2" | sudo tee -a /etc/fstab
+# 
+# Mount and create folder for brick
+# sudo mount -a
+# sudo mkdir -p /data/glusterfs/glass5/brick5

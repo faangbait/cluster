@@ -1,0 +1,57 @@
+- name: Bootstrap Kubernetes Workers
+  hosts: workers
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Assert ENV Variables exist
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'K8S_VERSION')
+          - lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT')
+          - lookup('ansible.builtin.env', 'ROOT_PASSWORD')
+
+        fail_msg: "Some required variables are not defined."
+        success_msg: "All required variables are defined"
+
+    - name: Set facts
+      ansible.builtin.set_fact:
+        k8s_version: "{{ lookup('ansible.builtin.env', 'K8S_VERSION') | split('.') }}"
+        calico_version: v3.31.2
+        localuser_account: "{{ lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT') }}"
+        root_password: "{{ lookup('ansible.builtin.env', 'ROOT_PASSWORD') }}"
+
+    - name: Set derived facts
+      ansible.builtin.set_fact:
+        k8s_minor: "{{ k8s_version[0] }}.{{ k8s_version[1] }}"
+        k8s_patch: "{{ k8s_version[0] }}.{{ k8s_version[1] }}.{{ k8s_version[2] }}"
+        localuser_home: "/home/{{ localuser_account }}"
+
+    - name: Configure Kubernetes
+      ansible.builtin.import_role:
+        name: kubernetes
+
+    - name: Configure Helm
+      ansible.builtin.import_role:
+        name: helm
+
+    - name: Run Worker Playbook
+      ansible.builtin.import_role:
+        name: kubernetes-worker
+
+    - name: Reboot Node
+      ansible.builtin.reboot:
+        reboot_timeout: 3600
+
+    - name: Confirm Infrastructure (PASS/FAIL)
+      ansible.builtin.shell: |
+        # Ensure connection between all nodes, plus a connection between the router and nodes.
+            ping node1 -c4
+
+        # Ensure kubectl version matches expected
+            kubectl version -oyaml
+
+        # Ensure kubeadm version matches expected
+            kubeadm version -oyaml
+
+  
+  # when complete, move to 50-bootstrap-applications

@@ -1,0 +1,76 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+bootstrapTokens:
+- groups:
+  - system:bootstrappers:kubeadm:default-node-token
+  token: a4rw8p.9h268ve319bssuv3
+  ttl: 24h0m0s
+  usages:
+  - signing
+  - authentication
+localAPIEndpoint:
+  advertiseAddress: 10.0.8.254
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///var/run/crio/crio.sock
+  imagePullPolicy: IfNotPresent
+  imagePullSerial: true
+  name: node1
+  taints: []
+timeouts:
+  controlPlaneComponentHealthCheck: 4m0s
+  discovery: 5m0s
+  etcdAPICall: 2m0s
+  kubeletHealthCheck: 4m0s
+  kubernetesAPICall: 1m0s
+  tlsBootstrap: 5m0s
+  upgradeManifests: 5m0s
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+  - name: allow-privileged
+    value: "true"
+  - name: anonymous-auth
+    value: "true"
+  - name: audit-log-maxage
+    value: "30"
+  - name: audit-log-maxbackup
+    value: "10"
+  - name: audit-log-maxsize
+    value: "100"
+  - name: audit-log-path
+    value: /var/log/kubernetes-audit
+  - name: authorization-mode
+    value: Node,RBAC
+  - name: enable-admission-plugins
+    value: DefaultStorageClass
+  - name: encryption-provider-config
+    value: /etc/kubernetes/encryption-provider-config.yaml
+  - name: feature-gates
+    value: SizeMemoryBackedVolumes=true
+  extraVolumes:
+    - name: enc-config
+      hostPath: "/etc/kubernetes/setup/encryption-provider-config.yaml"
+      mountPath: "/etc/kubernetes/encryption-provider-config.yaml"
+      readOnly: true
+caCertificateValidityPeriod: 87600h0m0s
+certificateValidityPeriod: 8760h0m0s
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controlPlaneEndpoint: k8s-control-plane-lb:6443
+controllerManager: {}
+dns: {}
+encryptionAlgorithm: RSA-2048
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+imageRepository: registry.k8s.io
+kubernetesVersion: v1.34.3
+networking:
+  dnsDomain: cluster.local
+  podSubnet: 10.48.0.0/16
+  serviceSubnet: 10.96.0.0/12
+proxy: {}
+scheduler: {}

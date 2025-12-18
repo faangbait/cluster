@@ -1,0 +1,12 @@
+- name: Download the helm bash script
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+    dest: "/tmp/helm-install"
+    mode: '0755'
+
+- name: Run the downloaded helm bash script
+  ansible.builtin.shell: "/tmp/helm-install"
+  environment:
+    HELM_INSTALL_DIR: /usr/bin
+  args:
+    creates: "/usr/bin/helm"

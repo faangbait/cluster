@@ -1,0 +1,32 @@
+- name: Provision Kubernetes Bare Metal Cluster
+  # store local variables in .env like `export LOCAL_USER_ACCOUNT=xyz` and source .env
+  # ansible-playbook -i inventory 10-provision-cluster.yaml
+  # on first run, include: -k -K and type in the password for your local user account 2x
+  hosts: cluster
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Assert ENV Variables exist
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT')
+        fail_msg: "Some required variables are not defined."
+        success_msg: "All required variables are defined"
+
+    - name: Set facts
+      ansible.builtin.set_fact:
+        localuser_account: "{{ lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT') }}"
+
+    - name: Set derived facts
+      ansible.builtin.set_fact:
+        localuser_home: "/home/{{ localuser_account }}"
+
+    - name: Configure Bare Metal Host Access (sshd, etc)
+      ansible.builtin.import_role: 
+        name: configure-host-access
+  
+    - name: Configure Bare Metal Host
+      ansible.builtin.import_role:
+        name: configure-host
+
+# when complete, move to 20-bootstrap-gluster.yaml

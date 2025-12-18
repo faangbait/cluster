@@ -1,0 +1,58 @@
+- name: Bootstrap Kubernetes Control Plane
+  hosts: controlplane
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Assert ENV Variables exist
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'K8S_VERSION')
+          - lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT')
+        fail_msg: "Some required variables are not defined."
+        success_msg: "All required variables are defined"
+
+    - name: Set facts
+      ansible.builtin.set_fact:
+        k8s_version: "{{ lookup('ansible.builtin.env', 'K8S_VERSION') | split('.') }}"
+        localuser_account: "{{ lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT') }}"
+
+    - name: Set derived facts
+      ansible.builtin.set_fact:
+        k8s_minor: "{{ k8s_version[0] }}.{{ k8s_version[1] }}"
+        k8s_patch: "{{ k8s_version[0] }}.{{ k8s_version[1] }}.{{ k8s_version[2] }}"
+        localuser_home: "/home/{{ localuser_account }}"
+
+    - name: Configure Kubernetes
+      ansible.builtin.import_role:
+        name: kubernetes
+
+    - name: Configure Helm
+      ansible.builtin.import_role:
+        name: helm
+
+    - name: Copy Kubernetes Config
+      ansible.builtin.copy:
+        src: files/kubernetes
+        dest: /etc
+        mode: '0700'
+
+    - name: Generate Secret
+      ansible.builtin.shell: head -c 32 /dev/urandom | base64
+      register: encryption_secret
+
+    - name: Write Secret
+      ansible.builtin.replace:
+        path: /etc/kubernetes/setup/encryption-provider-config.yaml
+        regexp: "REPLACEME"
+        replace: "{{ encryption_secret.stdout }}"
+
+    - name: Kubeadm Init
+      ansible.builtin.shell: kubeadm init --config /etc/kubernetes/setup/cluster-config.yaml
+
+    # TODO: Security Check
+
+    - name: Reboot Node
+      ansible.builtin.reboot:
+        reboot_timeout: 3600
+
+# when complete, move to 40-bootstrap-workers.yaml

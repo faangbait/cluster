@@ -1,0 +1,84 @@
+# ansible-playbook chia-ssl-fix.yaml -i node1,node2,node4,localhost
+
+---
+- name: Fix XCH SSL Errors
+  hosts: all
+
+  tasks:
+    - name: Stop XCH Utilities (Farmer)
+      systemd_service:
+        state: stopped
+        name: '{{item}}'
+      with_items:
+        - chia-daemon@ss
+        - chia-full-node@ss
+        - chia-wallet@ss
+        - chia-farmer@ss
+      when: inventory_hostname == "node1"
+      become: true
+
+    - name: Stop XCH Utilities (Harvester)
+      systemd_service:
+        state: stopped
+        name: '{{item}}'
+      with_items:
+        - chia-daemon@ss
+        - chia-harvester@ss
+      when: inventory_hostname != "node1"
+      become: true
+
+    - name: Regenerate ca certificates (Farmer)
+      shell: chia init -c ~/.chia/mainnet/config/ssl/ca/
+      when: inventory_hostname == "node1"
+
+    - name: Copy ca file to localhost
+      ansible.posix.synchronize:
+        mode: pull
+        src: node1:~/.chia/mainnet/config/ssl/ca/
+        dest: /tmp/chia-ca
+        recursive: true
+        archive: false
+        checksum: true
+      when: inventory_hostname == "localhost"
+
+    - name: Copy ca file to other hosts
+      ansible.posix.synchronize:
+        mode: push
+        src: /tmp/chia-ca/
+        dest: /tmp/chia-ca/
+        recursive: true
+        archive: false
+        checksum: true
+      when: inventory_hostname != "localhost"
+
+    - name: Regenerate ca certificates (Harvester)
+      shell: chia init -c /tmp/chia-ca/
+      when: inventory_hostname != "node1"
+
+    - name: Restart XCH Utilities (Farmer)
+      systemd_service:
+        state: started
+        name: '{{item}}'
+      with_items:
+        - chia-daemon@ss
+        - chia-full-node@ss
+        - chia-wallet@ss
+        - chia-farmer@ss
+      when: inventory_hostname == "node1"
+      become: true
+
+    - name: Restart XCH Utilities (Harvester)
+      systemd_service:
+        state: started
+        name: '{{item}}'
+      with_items:
+        - chia-daemon@ss
+        - chia-harvester@ss
+      when: inventory_hostname != "node1"
+      become: true
+
+    - name: Remove ca files
+      file:
+        path: /tmp/chia-ca/
+        state: absent
+      become: true

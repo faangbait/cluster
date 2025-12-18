@@ -1,0 +1,27 @@
+
+- name: Sync kubeconfig
+  ansible.builtin.shell: |
+    sshpass -p "{{ root_password }}" rsync -e "ssh -o StrictHostKeyChecking=no" root@k8s-control-plane-lb:/etc/kubernetes/admin.conf {{ localuser_home }}/.kube/config
+  become_user: "{{ localuser_account }}"
+  args:
+    creates: "{{ localuser_home }}/.kube/config"
+
+- name: Sync kubeconfig
+  ansible.builtin.shell: |
+    sshpass -p "{{ root_password }}" rsync -e "ssh -o StrictHostKeyChecking=no" root@k8s-control-plane-lb:/etc/kubernetes/admin.conf /home/kube/.kube/config
+    chown kube:kube /home/kube/.kube/config
+  args:
+    creates: "/home/kube/.kube/config"
+
+- name: Join Nodes to Cluster
+  ansible.builtin.shell: kubeadm token create --print-join-command
+  environment:
+    KUBECONFIG: /home/kube/.kube/config
+  register: kubeadm_join_command
+
+- name: Show Join Command
+  ansible.builtin.debug:
+    msg: "{{ kubeadm_join_command.stdout }}"
+
+- name: Run Join Command
+  ansible.builtin.shell: "{{ kubeadm_join_command.stdout }}"

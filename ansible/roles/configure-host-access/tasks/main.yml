@@ -1,0 +1,39 @@
+# Note: We must MANUALLY allow wheel nopasswd in /etc/sudoers BEFORE first run
+
+- name: Add nopasswd-wheel to /etc/sudoers.d
+  community.general.sudoers:
+    name: nopasswd-wheel
+    group: wheel
+    state: present
+    commands: ALL
+  become_user: root
+
+- name: Add authorized keys
+  ansible.posix.authorized_key:
+    user: "{{ localuser_account }}"
+    key: "{{ lookup('file', 'public_keys/yubikey.pub') }}"
+    exclusive: true
+
+- name: Disable PermitRootLogin
+  ansible.builtin.replace:
+    path: /etc/ssh/sshd_config
+    regexp: "^PermitRootLogin.*$"
+    replace: "#PermitRootLogin prohibit-password"
+
+- name: debug
+  debug:
+    msg: "{{ nmcli_ip4 }}"
+
+- name: Add SFP Connection
+  community.general.nmcli:
+    conn_name: "{{ nmcli_name }}"
+    ifname: "{{ nmcli_ifname }}"
+    type: ethernet
+    ip4: "{{ nmcli_ip4 }}"
+    gw4: "{{ nmcli_gw4 }}"
+    dns4:
+      - "10.0.0.1"
+      - "1.1.1.1"
+      - "9.9.9.9"
+    state: present
+    autoconnect: true

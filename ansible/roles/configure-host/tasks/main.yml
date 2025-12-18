@@ -1,0 +1,150 @@
+- name: Configure Intranet
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    block: |
+      10.0.8.254 node1 tengig1 k8s-control-plane-lb
+      10.0.8.253 node2 tengig2 
+      10.0.8.252 node3 tengig3
+      10.0.8.251 node4 tengig4
+    backup: true
+
+- name: Configure modprobe
+  community.general.modprobe:
+    name: "{{ item }}"
+    persistent: present
+  loop:
+    - overlay
+    - br_netfilter
+  
+- name: Configure Sysctl (bridge)
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: '1'
+    sysctl_set: true
+  loop:
+    - net.bridge.bridge-nf-call-iptables 
+    - net.ipv4.ip_forward                
+    - net.bridge.bridge-nf-call-ip6tables
+
+- name: Configure Sysctl (somaxconn)
+  ansible.posix.sysctl:
+    name: "net.core.somaxconn"
+    value: '10000'
+    sysctl_set: true
+
+# Necessary for redis, which is used in our authentication app deployment.
+# If you're standing up a non-redis cluster and won't be deploying any of the apps provided in the subfolders, you can skip this.
+- name: Check status of thp
+  ansible.builtin.command: cat /sys/kernel/mm/transparent_hugepage/enabled
+  register: thp_status
+
+- name: debug
+  debug:
+    msg: '{{ thp_status.stdout }}'
+
+- name: Disable thp
+  when: "'[never]' not in thp_status.stdout"
+  block:
+    - name: Disable until next reboot (preventing this block from running again)
+      shell: echo never {{ ">" }} /sys/kernel/mm/transparent_hugepage/enabled
+
+    - name: Disable THP defrag until next reboot
+      shell: echo never {{ ">" }} /sys/kernel/mm/transparent_hugepage/defrag
+
+    - name: Add to GRUB_CMDLINE_LINUX in /etc/default/grub
+      shell: grubby --args="transparent_hugepage=never" --update-kernel=ALL
+
+- name: Configure Kubernetes YUM Repo
+  ansible.builtin.yum_repository:
+    name: kubernetes
+    description: "Kubernetes v{{ k8s_minor }} YUM Repo"
+    baseurl: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_minor }}/rpm/"
+    gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_minor }}/rpm/repodata/repomd.xml.key"
+    gpgcheck: true
+
+- name: Configure CRI-O YUM Repo
+  ansible.builtin.yum_repository:
+    name: cri-o
+    description: "CRI-O YUM Repo"
+    baseurl: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ k8s_minor }}/rpm/"
+    gpgkey: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ k8s_minor }}/rpm/repodata/repomd.xml.key"
+    gpgcheck: true
+
+- name: Add Calico conf to Network Manager
+  ansible.builtin.copy:
+    content: |
+      [keyfile]
+      unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan.calico;interface-name:vxlan-v6.calico;interface-name:wireguard.cali;interface-name:wg-v6.cali
+    dest: /etc/NetworkManager/conf.d/calico.conf
+
+- name: Update all packages
+  ansible.builtin.dnf:
+    state: latest
+    name: "*"
+
+- name: Install required packages
+  ansible.builtin.dnf:
+    state: latest
+    name:
+      - chrony
+      - conntrack
+      - container-selinux
+      - ebtables
+      - ethtool
+      - git
+      - iproute-tc
+      - iptables
+      - socat
+      - sshpass
+      - yum-utils
+      - yum-plugin-versionlock
+
+- name: Enable chrony
+  ansible.builtin.systemd_service:
+    state: started
+    enabled: true
+    name: chronyd
+
+- name: Check if Swap is enabled
+  ansible.builtin.command: swapon -s
+  register: swap_config
+
+- name: Disable Swap, if enabled
+  when: "'Size' in swap_config.stdout"
+  block:
+    - name: Disable temporarily
+      ansible.builtin.command: swapoff -a
+
+    - name: Remove from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: " swap "
+        state: absent
+
+- name: Disable SELINUX
+  ansible.builtin.shell: |
+    sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+    setenforce 0
+
+- name: Configure Firewall
+  ansible.posix.firewalld:
+    state: enabled
+    permanent: true
+    service: "{{ item }}"
+  loop:
+    - kube-apiserver
+    - etcd-client
+    - etcd-server
+    - kubelet
+    - kube-scheduler
+    - kube-controller-manager
+    - kube-nodeport-services
+    - https
+
+- name: Configure Firewall
+  ansible.posix.firewalld:
+    state: enabled
+    permanent: true
+    port: "{{ item }}"
+  loop:
+    - "9000/tcp"

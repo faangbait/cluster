@@ -1,0 +1,2 @@
+- name: enable no-thp profile
+  command: tuned-adm profile no-thp
