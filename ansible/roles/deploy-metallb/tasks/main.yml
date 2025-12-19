@@ -1,3 +1,14 @@
+- name: Create MetalLB Namespace
+  kubernetes.core.k8s:
+    state: present
+    api_version: v1
+    kind: Namespace
+    name: metallb
+    metadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/audit: privileged
+        pod-security.kubernetes.io/warn: privileged
 
 - name: Add MetalLB Chart Repo
   kubernetes.core.helm_repository:
@@ -11,18 +22,25 @@
     release_namespace: metallb
     create_namespace: true
 
-# - name: Deploy MetalLB Resources
-#   kubernetes.core.k8s:
-#     state: present
-#     src: files/kubernetes/values/networking/metallb-resources.yaml
-
-# TODO
-# kubectl edit ns/metallb
-# # add the following labels
-# #  labels:
-# #    pod-security.kubernetes.io/enforce: privileged
-# #    pod-security.kubernetes.io/audit: privileged
-# #    pod-security.kubernetes.io/warn: privileged
+- name: Deploy MetalLB Resources - L2 Advertisement
+  kubernetes.core.k8s:
+    state: present
+    api_version: metallb.io/v1beta1
+    kind: L2Advertisement
+    name: l2
+    namespace: metallb
+    
+- name: Deploy MetalLB Resources - IP Address Pool
+  kubernetes.core.k8s:
+    state: present
+    api_version: metallb.io/v1beta1
+    kind: IPAddressPool
+    name: default
+    namespace: metallb
+    definition:
+      spec:
+        addresses:
+          - 10.0.15.0/24
 
 # > ## PASS/FAIL: LoadBalancer External IP
 # > Install nginx with an external IP

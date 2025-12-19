@@ -14,13 +14,23 @@
       installation:
         cni:
           type: Calico
-          ipam:
-            type: Calico
         calicoNetwork:
-          bgp: Enabled
+          kubeProxyManagement: Enabled
+          linuxDataplane: BPF
+          bgp: Disabled
           ipPools:
-          - cidr: 10.48.0.0/16
-            encapsulation: VXLANCrossSubnet
+            - name: default-ipv4-ippool
+              blockSize: 26
+              cidr: 10.48.0.0/16
+              encapsulation: VXLANCrossSubnet
+              natOutgoing: Enabled
+              nodeSelector: all()
           nodeAddressAutodetectionV4:
             cidrs:
               - "10.0.8.0/24"
+      defaultFelixConfiguration:
+        enabled: true
+        bpfExternalServiceMode: DSR
+      kubernetesServiceEndpoint:
+        host: "10.0.8.254"
+        port: "6443"

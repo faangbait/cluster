@@ -7,6 +7,12 @@
       ansible.builtin.set_fact:
         calico_version: v3.31.2
 
+    - name: Ensure the kubernetes python package is installed on node1
+      ansible.builtin.pip:
+        name: kubernetes
+        state: present
+      delegate_to: node1
+      
     - name: Deploy Calico
       ansible.builtin.import_role:
         name: deploy-calico
@@ -43,8 +49,7 @@
     #     name: deploy-traefik
 
 
-# ## [TODO] Label High-Memory nodes
-# ```sh
-# kubectl label nodes node1 highmem=true
-# kubectl label nodes node4 highmem=true
-# ```
+    - name: Label Nodes
+      ansible.builtin.shell: |
+        kubectl label nodes --overwrite node1 highmem=true
+        kubectl label nodes --overwrite node4 highmem=true

@@ -47,9 +47,14 @@
         replace: "{{ encryption_secret.stdout }}"
 
     - name: Kubeadm Init
-      ansible.builtin.shell: kubeadm init --config /etc/kubernetes/setup/cluster-config.yaml
+      ansible.builtin.shell: kubeadm init --config /etc/kubernetes/setup/cluster-config.yaml --skip-phases=addon/kube-proxy
 
     # TODO: Security Check
+
+    - name: Copy Kubeconfig
+      ansible.builtin.shell: |
+        cp /etc/kubernetes/admin.conf {{ localuser_home }}/.kube/config
+        chown {{ localuser_account }}:{{ localuser_account }} {{ localuser_home }}/.kube/config
 
     - name: Reboot Node
       ansible.builtin.reboot:

@@ -94,6 +94,7 @@
       - git
       - iproute-tc
       - iptables
+      - python3-pip
       - socat
       - sshpass
       - yum-utils
@@ -148,3 +149,5 @@
     port: "{{ item }}"
   loop:
     - "9000/tcp"
+    - "5473/tcp"
+    - "4789/udp"
