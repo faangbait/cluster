@@ -131,6 +131,7 @@
   ansible.posix.firewalld:
     state: enabled
     permanent: true
+    immediate: true
     service: "{{ item }}"
   loop:
     - kube-apiserver
@@ -146,6 +147,7 @@
   ansible.posix.firewalld:
     state: enabled
     permanent: true
+    immediate: true
     port: "{{ item }}"
   loop:
     - "9000/tcp"

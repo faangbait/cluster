@@ -1,0 +1,178 @@
+---
+# Kubernetes minor versions may not be skipped. This playbook deliberately
+# completes 1.35 on every node before beginning the 1.36 upgrade.
+- name: Validate the Kubernetes upgrade prerequisites
+  hosts: controlplane[0]
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    kubernetes_upgrade_backup_confirmed: false
+  tasks:
+    - name: Require explicit confirmation that cluster data is backed up
+      ansible.builtin.assert:
+        that: kubernetes_upgrade_backup_confirmed | bool
+        fail_msg: >-
+          Back up cluster and application data, then rerun with
+          -e kubernetes_upgrade_backup_confirmed=true.
+
+    - name: Read the current control-plane version
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - version
+          - -o=json
+      register: kubectl_version
+      changed_when: false
+
+    - name: Require a resumable Kubernetes source version
+      ansible.builtin.assert:
+        that: >-
+          ((kubectl_version.stdout | from_json).serverVersion.minor
+          | regex_replace('[^0-9].*$', '')) in ['34', '35', '36']
+        fail_msg: This playbook supports Kubernetes v1.34.x and partially completed runs through v1.36.x.
+
+- name: Prepare every node for Calico traffic during the rolling upgrade
+  hosts: cluster
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Allow Calico traffic through firewalld
+      ansible.posix.firewalld:
+        port: "{{ item }}"
+        state: enabled
+        permanent: true
+        immediate: true
+      loop:
+        - 5473/tcp
+        - 4789/udp
+
+- name: Upgrade the control plane to Kubernetes v1.35
+  hosts: controlplane
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    kubernetes_upgrade_minor: '1.35'
+    kubernetes_drain_timeout: 15m
+    kubernetes_node_ready_timeout: 10m
+    kubernetes_delete_emptydir_data: false
+  handlers: &upgrade_handlers
+    - name: Restart kubelet
+      ansible.builtin.systemd_service:
+        name: kubelet
+        state: restarted
+        daemon_reload: true
+  pre_tasks:
+    - name: Read the current API server version
+      ansible.builtin.command: kubectl --kubeconfig=/etc/kubernetes/admin.conf version -o=json
+      register: stage_server_version
+      changed_when: false
+
+    - name: Set the current API server minor version
+      ansible.builtin.set_fact:
+        stage_current_minor: >-
+          {{ (stage_server_version.stdout | from_json).serverVersion.minor
+             | regex_replace('[^0-9].*$', '') | int }}
+  tasks:
+    - name: Run the control-plane upgrade
+      ansible.builtin.include_tasks: tasks/upgrade-kubernetes-control-plane.yml
+      when: stage_current_minor | int <= kubernetes_upgrade_minor.split('.')[1] | int
+
+- name: Upgrade workers to Kubernetes v1.35
+  hosts: workers
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    kubernetes_upgrade_minor: '1.35'
+    kubernetes_drain_timeout: 15m
+    kubernetes_node_ready_timeout: 10m
+    kubernetes_delete_emptydir_data: false
+  handlers: *upgrade_handlers
+  pre_tasks: &worker_stage_check
+    - name: Read the current kubelet version
+      ansible.builtin.command: kubelet --version
+      register: stage_kubelet_version
+      changed_when: false
+
+    - name: Set the current kubelet minor version
+      ansible.builtin.set_fact:
+        stage_current_minor: "{{ stage_kubelet_version.stdout.split('.')[1] | int }}"
+  tasks:
+    - name: Run the worker upgrade
+      ansible.builtin.include_tasks: tasks/upgrade-kubernetes-worker.yml
+      when: stage_current_minor | int <= kubernetes_upgrade_minor.split('.')[1] | int
+
+- name: Upgrade the control plane to Kubernetes v1.36
+  hosts: controlplane
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    kubernetes_upgrade_minor: '1.36'
+    kubernetes_drain_timeout: 15m
+    kubernetes_node_ready_timeout: 10m
+    kubernetes_delete_emptydir_data: false
+  handlers: *upgrade_handlers
+  pre_tasks:
+    - name: Read the current API server version
+      ansible.builtin.command: kubectl --kubeconfig=/etc/kubernetes/admin.conf version -o=json
+      register: stage_server_version
+      changed_when: false
+
+    - name: Set the current API server minor version
+      ansible.builtin.set_fact:
+        stage_current_minor: >-
+          {{ (stage_server_version.stdout | from_json).serverVersion.minor
+             | regex_replace('[^0-9].*$', '') | int }}
+  tasks:
+    - name: Run the control-plane upgrade
+      ansible.builtin.include_tasks: tasks/upgrade-kubernetes-control-plane.yml
+      when: stage_current_minor | int <= kubernetes_upgrade_minor.split('.')[1] | int
+
+- name: Upgrade workers to Kubernetes v1.36
+  hosts: workers
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    kubernetes_upgrade_minor: '1.36'
+    kubernetes_drain_timeout: 15m
+    kubernetes_node_ready_timeout: 10m
+    kubernetes_delete_emptydir_data: false
+  handlers: *upgrade_handlers
+  pre_tasks: *worker_stage_check
+  tasks:
+    - name: Run the worker upgrade
+      ansible.builtin.include_tasks: tasks/upgrade-kubernetes-worker.yml
+      when: stage_current_minor | int <= kubernetes_upgrade_minor.split('.')[1] | int
+
+- name: Verify the completed Kubernetes v1.36 upgrade
+  hosts: controlplane[0]
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read node versions
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - get
+          - nodes
+          - -o=jsonpath={range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{" "}{.status.nodeInfo.kubeletVersion}{"\n"}{end}
+      register: final_node_versions
+      changed_when: false
+
+    - name: Verify every node is Ready on Kubernetes v1.36
+      ansible.builtin.assert:
+        that:
+          - final_node_versions.stdout_lines | length == groups['cluster'] | length
+          - final_node_versions.stdout_lines | reject('match', '^\\S+ True v1\\.36\\.') | list | length == 0
+        fail_msg: "The upgrade finished, but node state is unexpected: {{ final_node_versions.stdout_lines }}"
+
+    - name: Show upgraded nodes
+      ansible.builtin.debug:
+        var: final_node_versions.stdout_lines

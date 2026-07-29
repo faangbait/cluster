@@ -1,0 +1,132 @@
+---
+- name: Verify RPM database health
+  ansible.builtin.include_tasks: verify-rpm-database.yml
+
+- name: Check cgroups v2 before Kubernetes 1.36
+  ansible.builtin.stat:
+    path: /sys/fs/cgroup/cgroup.controllers
+  register: cgroup_v2
+  when: kubernetes_upgrade_minor == '1.36'
+
+- name: Require cgroups v2 for Kubernetes 1.36
+  ansible.builtin.assert:
+    that: cgroup_v2.stat.exists
+    fail_msg: Kubernetes 1.36 defaults to rejecting cgroups v1; migrate this host to cgroups v2 first.
+  when: kubernetes_upgrade_minor == '1.36'
+
+- name: Point the Kubernetes repository at v{{ kubernetes_upgrade_minor }}
+  ansible.builtin.yum_repository:
+    name: kubernetes
+    description: "Kubernetes v{{ kubernetes_upgrade_minor }} YUM Repo"
+    baseurl: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_upgrade_minor }}/rpm/"
+    gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_upgrade_minor }}/rpm/repodata/repomd.xml.key"
+    gpgcheck: true
+    enabled: true
+
+- name: Unlock kubeadm
+  community.general.yum_versionlock:
+    name: kubeadm
+    state: absent
+
+- name: Install the latest kubeadm v{{ kubernetes_upgrade_minor }} package
+  ansible.builtin.dnf:
+    name: "kubeadm-{{ kubernetes_upgrade_minor }}.*"
+    state: latest
+    update_cache: true
+    disable_excludes: kubernetes
+
+- name: Read the installed kubeadm version
+  ansible.builtin.command: kubeadm version -o short
+  register: installed_kubeadm_version
+  changed_when: false
+
+- name: Verify the kubeadm minor version
+  ansible.builtin.assert:
+    that: installed_kubeadm_version.stdout is match('^v' + kubernetes_upgrade_minor + '\\.')
+    fail_msg: "Expected kubeadm v{{ kubernetes_upgrade_minor }}.x, got {{ installed_kubeadm_version.stdout }}"
+
+- name: Update the worker's kubelet configuration
+  ansible.builtin.command: kubeadm upgrade node
+
+- name: Drain {{ inventory_hostname }}
+  block:
+    - name: Evict workloads from {{ inventory_hostname }}
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['kubectl', '--kubeconfig=/etc/kubernetes/admin.conf', 'drain',
+             inventory_hostname, '--ignore-daemonsets',
+             '--timeout=' + kubernetes_drain_timeout]
+            + (['--delete-emptydir-data'] if kubernetes_delete_emptydir_data | bool else [])
+          }}
+      delegate_to: "{{ groups['controlplane'][0] }}"
+  rescue:
+    - name: Restore scheduling after the failed worker drain
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - uncordon
+          - "{{ inventory_hostname }}"
+      delegate_to: "{{ groups['controlplane'][0] }}"
+
+    - name: Stop after restoring scheduling
+      ansible.builtin.fail:
+        msg: The drain failed; {{ inventory_hostname }} was uncordoned again.
+
+- name: Unlock kubelet and kubectl
+  community.general.yum_versionlock:
+    name:
+      - kubelet
+      - kubectl
+    state: absent
+
+- name: Upgrade kubelet and kubectl to v{{ kubernetes_upgrade_minor }}
+  ansible.builtin.dnf:
+    name:
+      - "kubelet-{{ kubernetes_upgrade_minor }}.*"
+      - "kubectl-{{ kubernetes_upgrade_minor }}.*"
+    state: latest
+    disable_excludes: kubernetes
+  notify: Restart kubelet
+
+- name: Apply the kubelet restart now
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the upgraded kubelet version
+  ansible.builtin.command: kubelet --version
+  register: installed_kubelet_version
+  changed_when: false
+
+- name: Verify the kubelet minor version
+  ansible.builtin.assert:
+    that: installed_kubelet_version.stdout is match('^Kubernetes v' + kubernetes_upgrade_minor + '\\.')
+    fail_msg: "Expected kubelet v{{ kubernetes_upgrade_minor }}.x, got {{ installed_kubelet_version.stdout }}"
+
+- name: Lock Kubernetes packages
+  community.general.yum_versionlock:
+    name:
+      - kubeadm
+      - kubectl
+      - kubelet
+
+- name: Uncordon {{ inventory_hostname }}
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - uncordon
+      - "{{ inventory_hostname }}"
+  delegate_to: "{{ groups['controlplane'][0] }}"
+
+- name: Wait for {{ inventory_hostname }} to be Ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - wait
+      - node/{{ inventory_hostname }}
+      - --for=condition=Ready
+      - --timeout={{ kubernetes_node_ready_timeout }}
+  delegate_to: "{{ groups['controlplane'][0] }}"
+  changed_when: false

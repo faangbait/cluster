@@ -1,0 +1,87 @@
+---
+- name: Verify the RPM database before changing packages
+  ansible.builtin.command: rpmdb --verifydb
+  register: rpm_database_verification
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Require explicit permission to repair a corrupt RPM database
+  ansible.builtin.assert:
+    that:
+      - rpm_database_verification.rc == 0 or kubernetes_repair_rpmdb | default(false) | bool
+    fail_msg: >-
+      The RPM database on {{ inventory_hostname }} is corrupt. Back it up and
+      repair it by rerunning with -e kubernetes_repair_rpmdb=true.
+
+- name: Repair a corrupt RPM database
+  when: rpm_database_verification.rc != 0
+  block:
+    - name: Create the RPM database backup directory
+      ansible.builtin.file:
+        path: /var/preserve
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Back up the corrupt RPM database
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --create
+          - --gzip
+          - --file=/var/preserve/rpmdb-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.tar.gz
+          - --directory=/var/lib
+          - rpm
+      args:
+        creates: /var/preserve/rpmdb-{{ inventory_hostname }}-{{ ansible_date_time.epoch }}.tar.gz
+
+    - name: Rebuild the RPM database
+      ansible.builtin.command: rpmdb --rebuilddb
+
+    - name: Restore RPM database SELinux labels
+      ansible.builtin.command: restorecon -RF /var/lib/rpm
+      changed_when: true
+
+    - name: Verify the rebuilt RPM database
+      ansible.builtin.command: rpmdb --verifydb
+      changed_when: false
+      no_log: true
+
+- name: Read registered kubelet package versions
+  ansible.builtin.command:
+    argv:
+      - rpm
+      - --query
+      - --queryformat=%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n
+      - kubelet
+  register: registered_kubelet_packages
+  changed_when: false
+
+- name: Find stale kubelet records left by an interrupted transaction
+  ansible.builtin.set_fact:
+    stale_kubelet_package_records: >-
+      {{ registered_kubelet_packages.stdout_lines
+         | reject('match', '^kubelet-' + kubernetes_upgrade_minor + '\\.') | list }}
+
+- name: Require explicit permission to clean duplicate kubelet records
+  ansible.builtin.assert:
+    that:
+      - registered_kubelet_packages.stdout_lines | length < 2 or kubernetes_repair_rpmdb | default(false) | bool
+    fail_msg: >-
+      Multiple kubelet versions are registered on {{ inventory_hostname }}:
+      {{ registered_kubelet_packages.stdout_lines }}. Rerun with
+      -e kubernetes_repair_rpmdb=true to remove only the stale RPM records.
+
+- name: Remove stale duplicate kubelet records without deleting files
+  ansible.builtin.command:
+    argv:
+      - rpm
+      - --erase
+      - --justdb
+      - "{{ item }}"
+  loop: "{{ stale_kubelet_package_records }}"
+  when:
+    - registered_kubelet_packages.stdout_lines | length > 1
+    - kubernetes_repair_rpmdb | default(false) | bool

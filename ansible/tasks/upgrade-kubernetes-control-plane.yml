@@ -1,0 +1,195 @@
+---
+- name: Verify RPM database health
+  ansible.builtin.include_tasks: verify-rpm-database.yml
+
+- name: Check cgroups v2 before Kubernetes 1.36
+  ansible.builtin.stat:
+    path: /sys/fs/cgroup/cgroup.controllers
+  register: cgroup_v2
+  when: kubernetes_upgrade_minor == '1.36'
+
+- name: Require cgroups v2 for Kubernetes 1.36
+  ansible.builtin.assert:
+    that: cgroup_v2.stat.exists
+    fail_msg: Kubernetes 1.36 defaults to rejecting cgroups v1; migrate this host to cgroups v2 first.
+  when: kubernetes_upgrade_minor == '1.36'
+
+- name: Point the Kubernetes repository at v{{ kubernetes_upgrade_minor }}
+  ansible.builtin.yum_repository:
+    name: kubernetes
+    description: "Kubernetes v{{ kubernetes_upgrade_minor }} YUM Repo"
+    baseurl: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_upgrade_minor }}/rpm/"
+    gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_upgrade_minor }}/rpm/repodata/repomd.xml.key"
+    gpgcheck: true
+    enabled: true
+
+- name: Unlock kubeadm
+  community.general.yum_versionlock:
+    name: kubeadm
+    state: absent
+
+- name: Install the latest kubeadm v{{ kubernetes_upgrade_minor }} package
+  ansible.builtin.dnf:
+    name: "kubeadm-{{ kubernetes_upgrade_minor }}.*"
+    state: latest
+    update_cache: true
+    disable_excludes: kubernetes
+
+- name: Read the installed kubeadm version
+  ansible.builtin.command: kubeadm version -o short
+  register: installed_kubeadm_version
+  changed_when: false
+
+- name: Verify the kubeadm minor version
+  ansible.builtin.assert:
+    that: installed_kubeadm_version.stdout is match('^v' + kubernetes_upgrade_minor + '\\.')
+    fail_msg: "Expected kubeadm v{{ kubernetes_upgrade_minor }}.x, got {{ installed_kubeadm_version.stdout }}"
+
+- name: Read the live kubeadm cluster configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - --namespace=kube-system
+      - get
+      - configmap/kubeadm-config
+      - --output=jsonpath={.data.ClusterConfiguration}
+  register: live_kubeadm_configuration
+  changed_when: false
+
+- name: Parse the live kubeadm cluster configuration
+  ansible.builtin.set_fact:
+    parsed_kubeadm_configuration: "{{ live_kubeadm_configuration.stdout | from_yaml }}"
+
+- name: Find feature gates removed in Kubernetes 1.35
+  ansible.builtin.set_fact:
+    removed_feature_gate_arguments: >-
+      {{ parsed_kubeadm_configuration.apiServer.extraArgs | default([])
+         | selectattr('name', 'equalto', 'feature-gates') | list }}
+  when: kubernetes_upgrade_minor == '1.35'
+
+- name: Refuse to discard unrelated API server feature gates
+  ansible.builtin.assert:
+    that: >-
+      removed_feature_gate_arguments | length == 0 or
+      (removed_feature_gate_arguments | map(attribute='value') | list)
+      == ['SizeMemoryBackedVolumes=true']
+    fail_msg: >-
+      The live kubeadm configuration contains feature gates other than the
+      removed SizeMemoryBackedVolumes gate; review them before upgrading:
+      {{ removed_feature_gate_arguments }}
+  when: kubernetes_upgrade_minor == '1.35'
+
+- name: Build a Kubernetes 1.35-compatible kubeadm configuration
+  ansible.builtin.set_fact:
+    compatible_kubeadm_configuration: >-
+      {{ parsed_kubeadm_configuration | combine({
+           'apiServer': parsed_kubeadm_configuration.apiServer | combine({
+             'extraArgs': parsed_kubeadm_configuration.apiServer.extraArgs
+               | rejectattr('name', 'equalto', 'feature-gates') | list
+           })
+         }) }}
+  when:
+    - kubernetes_upgrade_minor == '1.35'
+    - removed_feature_gate_arguments | length > 0
+
+- name: Remove the obsolete feature gate from the live kubeadm configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - --namespace=kube-system
+      - patch
+      - configmap/kubeadm-config
+      - --type=merge
+      - "--patch={{ {'data': {'ClusterConfiguration': compatible_kubeadm_configuration | to_nice_yaml(indent=2, width=9999)}} | to_json }}"
+  when:
+    - kubernetes_upgrade_minor == '1.35'
+    - removed_feature_gate_arguments | length > 0
+
+- name: Check the kubeadm upgrade plan
+  ansible.builtin.command: kubeadm upgrade plan {{ installed_kubeadm_version.stdout }}
+  changed_when: false
+
+- name: Upgrade the primary control plane
+  ansible.builtin.command: kubeadm upgrade apply --yes {{ installed_kubeadm_version.stdout }}
+
+- name: Drain the control-plane node before upgrading kubelet
+  block:
+    - name: Evict workloads from the control-plane node
+      ansible.builtin.command:
+        argv: >-
+          {{
+            ['kubectl', '--kubeconfig=/etc/kubernetes/admin.conf', 'drain',
+             inventory_hostname, '--ignore-daemonsets',
+             '--timeout=' + kubernetes_drain_timeout]
+            + (['--delete-emptydir-data'] if kubernetes_delete_emptydir_data | bool else [])
+          }}
+  rescue:
+    - name: Restore scheduling after the failed control-plane drain
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - uncordon
+          - "{{ inventory_hostname }}"
+
+    - name: Stop after restoring scheduling
+      ansible.builtin.fail:
+        msg: The drain failed; {{ inventory_hostname }} was uncordoned again.
+
+- name: Unlock kubelet and kubectl
+  community.general.yum_versionlock:
+    name:
+      - kubelet
+      - kubectl
+    state: absent
+
+- name: Upgrade kubelet and kubectl to v{{ kubernetes_upgrade_minor }}
+  ansible.builtin.dnf:
+    name:
+      - "kubelet-{{ kubernetes_upgrade_minor }}.*"
+      - "kubectl-{{ kubernetes_upgrade_minor }}.*"
+    state: latest
+    disable_excludes: kubernetes
+  notify: Restart kubelet
+
+- name: Apply the kubelet restart now
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the upgraded kubelet version
+  ansible.builtin.command: kubelet --version
+  register: installed_kubelet_version
+  changed_when: false
+
+- name: Verify the kubelet minor version
+  ansible.builtin.assert:
+    that: installed_kubelet_version.stdout is match('^Kubernetes v' + kubernetes_upgrade_minor + '\\.')
+    fail_msg: "Expected kubelet v{{ kubernetes_upgrade_minor }}.x, got {{ installed_kubelet_version.stdout }}"
+
+- name: Lock Kubernetes packages
+  community.general.yum_versionlock:
+    name:
+      - kubeadm
+      - kubectl
+      - kubelet
+
+- name: Uncordon the control-plane node
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - uncordon
+      - "{{ inventory_hostname }}"
+  changed_when: true
+
+- name: Wait for the control-plane node to be Ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig=/etc/kubernetes/admin.conf
+      - wait
+      - node/{{ inventory_hostname }}
+      - --for=condition=Ready
+      - --timeout={{ kubernetes_node_ready_timeout }}
+  changed_when: false

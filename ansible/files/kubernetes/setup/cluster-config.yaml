@@ -50,8 +50,6 @@ apiServer:
     value: /etc/kubernetes/encryption-provider-config.yaml
   - name: admission-control-config-file
     value: /etc/kubernetes/admission-control.yaml
-  - name: feature-gates
-    value: SizeMemoryBackedVolumes=true
   extraVolumes:
     - name: enc-config
       hostPath: "/etc/kubernetes/setup/encryption-provider-config.yaml"

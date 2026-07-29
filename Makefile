@@ -1,6 +1,11 @@
 #!/bin/bash
 
-.PHONY: build-gluster clean-gluster install-packages
+.PHONY: build-gluster clean-gluster install-packages test
+
+test:
+	cd ansible && \
+	ansible-playbook -i inventory/hosts.yml 50-bootstrap-applications.yaml \
+		--tags networking-test
 
 install-packages:
 	sudo apt-get update && \
