@@ -1,73 +1,40 @@
+
 {
+    "name": "cluster",
+    "image": "faangbait/workspaces:devops",
     "containerEnv": {},
     "customizations": {
         "vscode": {
-            "extensions": [
-                "EditorConfig.EditorConfig",
-                "timonwong.shellcheck",
-                "usernamehw.errorlens",
-                "github.vscode-github-actions",
-                "4ops.terraform",
-                "redhat.vscode-yaml",
-                "ankurmathur.opencode-provider-bridge",
-                "ms-kubernetes-tools.vscode-kubernetes-tools"
-            ],
-            "mcp": {
-                "servers": {
-                    "context-mode": {
-                        "command": "context-mode"
-                    },
-                    "smart-tree": {
-                        "args": [
-                            "--mcp"
-                        ],
-                        "command": "st",
-                        "type": "stdio"
-                    }
+            "extensions": [],
+            "settings": {
+                "redhat.telemetry.enabled": false,
+                "vs-kubernetes": {
+                    "vs-kubernetes.kubectlVersioning": "infer",
+                    "vs-kubernetes.knownKubeconfigs": ["/usr/local/share/kube-localhost"]
                 }
             }
         }
     },
     "features": {
-        "./local-features/copy-kube-config": {},
-        "ghcr.io/devcontainers-extra/features/terraform-ls-asdf:2": {},
-        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-            "enableNonRootDocker": "true",
-            "moby": "false"
-        },
-        "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
-            "helm": "latest",
-            "minikube": "none",
-            "version": "1.34"
-        },
-        "ghcr.io/devcontainers/features/terraform:1": {
-            "terragrunt": "latest",
-            "tflint": "latest",
-            "version": "latest"
+        "ghcr.io/faangbait/dnf-features/kubectl-helm-minikube:1": {
+            "version": "none",
+            "minikube": "none"
         }
     },
-    "image": "mcr.microsoft.com/devcontainers/base:resolute",
-    "initializeCommand": "cd .devcontainer && bash ensure-mount-sources",
-    "name": "cluster",
-    "postCreateCommand": "bash \"${containerWorkspaceFolder}/.devcontainer/install.sh\"",
-    "remoteEnv": {
-        "K8S_VERSION": "1.34.2",
-        "SYNC_LOCALHOST_KUBECONFIG": "true"
+    "postCreateCommand": {
+        "install-pyinfra": "uv tool install pyinfra"
     },
     "runArgs": [
-        "--add-host",
-        "k8s-control-plane-lb:10.0.8.254",
-        "--add-host",
-        "node1:10.0.8.254",
-        "--add-host",
-        "node2:10.0.8.253",
-        "--add-host",
-        "node3:10.0.8.252",
-        "--add-host",
-        "node4:10.0.8.251"
+        "--add-host=k8s-control-plane-lb:10.0.8.254",
+        "--add-host=node1:10.0.8.254",
+        "--add-host=node2:10.0.8.253",
+        "--add-host=node3:10.0.8.252",
+        "--add-host=node4:10.0.8.251"
     ],
     "mounts": [
-        "source=${env:HOME}${env:USERPROFILE}/.kube,target=/usr/local/share/kube-localhost,type=bind",
-        "source=portable-agents-opus5,target=/var/llms,type=volume"
-    ]
+        "source=${localEnv:HOME}${localEnv:USERPROFILE}/.kube,target=/usr/local/share/kube-localhost,type=bind,readonly"
+    ],
+    "remoteEnv": {
+        "K8S_VERSION" : "1.36.3"
+    }
 }
