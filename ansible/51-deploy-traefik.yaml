@@ -1,0 +1,15 @@
+- name: Deploy Traefik
+  hosts: localhost
+  connection: local
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Deploy Traefik
+      ansible.builtin.import_role:
+        name: deploy-traefik
+
+# Then, in any order:
+#
+# kubectl apply -f _init/20-secrets.yaml (configmap)
+# kubectl -n traefik create secret docker-registry regcred ...
+# kubectl -n traefik create secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=... --from-literal=AWS_SECRET_ACCESS_KEY=... --from-literal=AWS_REGION=us-east-1

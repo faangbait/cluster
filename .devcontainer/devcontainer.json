@@ -10,14 +10,16 @@
                 "redhat.telemetry.enabled": false,
                 "vs-kubernetes": {
                     "vs-kubernetes.kubectlVersioning": "infer",
-                    "vs-kubernetes.knownKubeconfigs": ["/usr/local/share/kube-localhost"]
-                }
+                    "vs-kubernetes.knownKubeconfigs": ["~/.kube/config"]
+                },
+                "vscode-kubernetes.kubectl-path-linux": "/usr/local/bin/kubectl"
+
             }
         }
     },
     "features": {
         "ghcr.io/faangbait/dnf-features/kubectl-helm-minikube:1": {
-            "version": "none",
+            "version": "1.36.3",
             "minikube": "none"
         }
     },

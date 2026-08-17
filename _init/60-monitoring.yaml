@@ -4,6 +4,6 @@
 #
 # helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 # helm repo update
-# helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --values=infrastructure/observability/prometheus-values.yaml
+# helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --values=ansible/files/kubernetes/values/observability/prometheus-values.yaml
 #
 ################################################################################

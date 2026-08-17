@@ -154,11 +154,6 @@
       ansible.builtin.import_role:
         name: deploy-metallb
 
-    # - name: Deploy Traefik
-    #   ansible.builtin.import_role:
-    #     name: deploy-traefik
-
-
     - name: Label Nodes
       ansible.builtin.shell: |
         kubectl label nodes --overwrite node1 highmem=true

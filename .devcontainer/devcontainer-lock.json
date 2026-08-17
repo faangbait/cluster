@@ -1,0 +1,9 @@
+{
+  "features": {
+    "ghcr.io/faangbait/dnf-features/kubectl-helm-minikube:1": {
+      "version": "1.1.0",
+      "resolved": "ghcr.io/faangbait/dnf-features/kubectl-helm-minikube@sha256:56ae911e3ef525b44556d212bb489b70a719cabc280bb5726a97c68ad0822e21",
+      "integrity": "sha256:56ae911e3ef525b44556d212bb489b70a719cabc280bb5726a97c68ad0822e21"
+    }
+  }
+}

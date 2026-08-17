@@ -1,5 +1,5 @@
 # TODO:
-# kubectl create secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
+# kubectl create -n traefik secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
 
 - name: Add Traefik Chart Repo
   kubernetes.core.helm_repository:
@@ -33,16 +33,16 @@
           mountPath: "/config"
           type: configMap
 
-      logs:
-        general:
-          level: WARN
-        access:
-          enabled: true
-          filePath: "/tmp/access.log"
-          bufferingSize: 100
+      log:
+        level: WARN
 
-      globalArguments:
-        - "--global.checknewversion"
+      accessLog:
+        enabled: true
+        filePath: "/tmp/access.log"
+        bufferingSize: 100
+
+      global:
+        checkNewVersion: true
 
       additionalArguments:
         - "--api.insecure=true"
@@ -67,46 +67,52 @@
 
         web:
           port: 8000
-          expose: 
+          expose:
             default: true
-          redirectTo: 
-            port: websecure
+          http:
+            redirections:
+              entryPoint:
+                to: websecure
+                scheme: https
 
         websecure:
           port: 8443
-          expose: 
+          expose:
             default: true
-          middlewares:
-            - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
-          tls:
-            enabled: true
-            certResolver: "letsencrypt"
-            options: "default"
+          http:
+            middlewares:
+              - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
+            tls:
+              enabled: true
+              certResolver: "letsencrypt"
+              options: "default"
 
         dht-tcp:
           port: 54321
-          expose: 
+          expose:
             default: true
           protocol: TCP
-          tls:
-            enabled: true
-            certResolver: "letsencrypt"
-            options: ""
+          http:
+            tls:
+              enabled: true
+              certResolver: "letsencrypt"
+              options: ""
 
         dht-udp: # TODO: Put this on the same port as tcp
           port: 54322
-          expose: 
+          expose:
             default: true
           protocol: UDP
 
         minecraft:
           port: 25565
-          expose: 
+          expose:
             default: true
           protocol: TCP
-          tls:
-            enabled: true
-            certResolver: "letsencrypt"
+          http:
+            tls:
+              enabled: true
+              certResolver: "letsencrypt"
 
       tlsOptions:
         default:
