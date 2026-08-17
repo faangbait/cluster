@@ -4,8 +4,7 @@
 #
 # kubectl create secret generic auth-redis --from-literal="redis-password=$(read -p "Redis Password: "; echo $REPLY)"
 #
-# helm repo add bitnami https://charts.bitnami.com/bitnami
-# helm install auth-redis bitnami/redis --version 28.0.5 --values=ansible/files/kubernetes/values/storage/auth-redis-values.yaml
+# helm upgrade --install auth-redis oci://registry-1.docker.io/bitnamicharts/redis --version 28.0.5 --namespace vault --values=ansible/files/kubernetes/values/storage/auth-redis-values.yaml
 #
 ##### AUTH #####################################################################
 
@@ -98,27 +97,12 @@ metadata:
     app.kubernetes.io/name: auth-configmap
     app.kubernetes.io/part-of: core
   annotations:
-    a8r.io/description: "Creates authelia config and file-based auth for users."
+    a8r.io/description: "Creates authelia config. File users live in Secret auth-users, not this ConfigMap."
     a8r.io/owner: "@faangbait"
     a8r.io/repository: "https://github.com/faangbait/antennae"
 data:
-  users.yml: |
-    users:
-      ss:
-        displayname: "S Smith"
-        password: "$argon2id$v=19$m=65536,t=3,p=4$jel1WjusitOk2lYBhSwUOA$KHlGhYh14UXpvJbvWMUroIm4Mk9MJ/6cR43646B5hVQ"
-        email: "sam@madeof.glass"
-        groups:
-          - admins
-          - dev
-      ah:
-        displayname: "A Her"
-        password: "$argon2id$v=19$m=65536,t=3,p=4$Sk83MWdnd0hTVzVEckcyRw$c9wnHqZsGFseJifPZvWz7g"
-        email: "alexlhdz@gmail.com"
-        groups:
-          - admins
-          - dev
-
+  # users.yml is Secret vault/auth-users — do not put credentials here.
+  # kubectl -n vault create secret generic auth-users --from-file=users.yml
   configuration.yml: |
     access_control:
       default_policy: deny
@@ -313,7 +297,7 @@ spec:
         - mountPath: /config
           name: cfg-auth
         - mountPath: /configmap
-          name: auth-configmap
+          name: auth-config
         resources:
           requests:
             memory: 256Mi
@@ -325,9 +309,19 @@ spec:
         - name: cfg-auth
           persistentVolumeClaim:
             claimName: authelia
-        - name: auth-configmap
-          configMap:
-            name: auth-configmap
+        - name: auth-config
+          projected:
+            sources:
+              - configMap:
+                  name: auth-configmap
+                  items:
+                    - key: configuration.yml
+                      path: configuration.yml
+              - secret:
+                  name: auth-users
+                  items:
+                    - key: users.yml
+                      path: users.yml
 ---
 # Create Authelia Service
 apiVersion: v1

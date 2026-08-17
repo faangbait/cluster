@@ -3,36 +3,28 @@ global:
   imagePullSecrets:
     - regcred
 image:
-  repository: bitnamilegacy/redis
-  tag: 8.2.1-debian-12-r0
+  registry: docker.io
+  repository: bitnami/redis
+  tag: latest
+  digest: sha256:061a40d93f0deb5f390866b0800f96a58dea8adde319af872523f1038b4a3a2b
 auth:
   existingSecret: "auth-redis"
   existingSecretPasswordKey: "redis-password"
   usePasswordFiles: true
 master:
-  podSecurityContext:
-    fsGroup: 65532
-  containerSecurityContext:
-    runAsUser: 65532
   persistence:
     accessModes: ["ReadWriteMany"]
 replica:
-  podSecurityContext:
-    fsGroup: 65532
-  containerSecurityContext:
-    runAsUser: 65532
   persistence:
     accessModes: ["ReadWriteMany"]
 sentinel:
   enabled: true
   image:
-    repository: bitnamilegacy/redis-sentinel
-    tag: 8.2.1-debian-12-r0
+    registry: docker.io
+    repository: bitnami/redis-sentinel
+    tag: latest
+    digest: sha256:227cd52aae97a987a5cee995027720dab7ba1f16c554340ad905b497dbe537d9
   masterSet: authelia
-  podSecurityContext:
-    fsGroup: 65532
-  containerSecurityContext:
-    runAsUser: 65532
   persistence:
     accessModes: ["ReadWriteMany"]
 networkPolicy:
@@ -42,12 +34,14 @@ networkPolicy:
 metrics:
   enabled: true
   image:
-    repository: bitnamilegacy/redis-exporter
-    tag: 1.76.0-debian-12-r0
-  containerSecurityContext:
-    runAsUser: 65532
+    registry: docker.io
+    repository: bitnami/redis-exporter
+    tag: latest
+    digest: sha256:fd5a0c9d1c7c316bd928d5837a54edc47176178023d6f976b83cd1341c4f8931
 volumePermissions:
   enabled: true
   image:
-    repository: bitnamilegacy/os-shell
-    tag: 12-debian-12-r51
+    registry: docker.io
+    repository: bitnami/os-shell
+    tag: latest
+    digest: sha256:475531b83cc9e79b0bacbb7b899f949e634490ec88267e6803184f8f2d54a549
