@@ -30,7 +30,21 @@
               - "10.0.8.0/24"
       defaultFelixConfiguration:
         enabled: true
-        bpfExternalServiceMode: DSR
+        bpfExternalServiceMode: Tunnel
       kubernetesServiceEndpoint:
         host: "10.0.8.254"
         port: "6443"
+
+# Required whenever linuxDataplane: BPF is enabled - IPAM must be node-affine
+# or the eBPF/DSR forwarding path can send return traffic to the wrong node,
+# breaking direct node-to-node traffic (e.g. MetalLB memberlist on 7946).
+# https://docs.tigera.io/calico/latest/networking/ipam/ipam#change-the-node-selector-for-an-ip-pool
+- name: Enable strict affinity for Calico IPAM (required for eBPF dataplane)
+  kubernetes.core.k8s:
+    state: present
+    api_version: projectcalico.org/v3
+    kind: IPAMConfiguration
+    name: default
+    definition:
+      spec:
+        strictAffinity: true

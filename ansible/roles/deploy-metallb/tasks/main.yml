@@ -4,23 +4,25 @@
     api_version: v1
     kind: Namespace
     name: metallb
-    metadata:
-      labels:
-        pod-security.kubernetes.io/enforce: privileged
-        pod-security.kubernetes.io/audit: privileged
-        pod-security.kubernetes.io/warn: privileged
+    definition:
+      metadata:
+        labels:
+          pod-security.kubernetes.io/enforce: privileged
+          pod-security.kubernetes.io/audit: privileged
+          pod-security.kubernetes.io/warn: privileged
 
 - name: Add MetalLB Chart Repo
   kubernetes.core.helm_repository:
     name: metallb
     repo_url: https://metallb.github.io/metallb
 
-- name: Deploy Latest MetalLB
+- name: Deploy MetalLB 0.15.3
   kubernetes.core.helm:
     name: metallb
     chart_ref: metallb/metallb
     release_namespace: metallb
     create_namespace: true
+    chart_version: "0.15.3"
 
 - name: Deploy MetalLB Resources - L2 Advertisement
   kubernetes.core.k8s:
@@ -29,7 +31,15 @@
     kind: L2Advertisement
     name: l2
     namespace: metallb
-    
+    definition:
+      spec:
+        # Only the intended LAN NICs. Do not list node2's onboard
+        # enp0s25 — NM once bound the SFP+ profile to that copper port.
+        interfaces:
+          - enp6s0f1  # node1 SFP+
+          - enp3s0f1  # node2 SFP+ (Aggregation)
+          - eno1       # node4
+
 - name: Deploy MetalLB Resources - IP Address Pool
   kubernetes.core.k8s:
     state: present

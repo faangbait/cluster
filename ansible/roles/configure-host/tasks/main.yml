@@ -77,6 +77,15 @@
       unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan.calico;interface-name:vxlan-v6.calico;interface-name:wireguard.cali;interface-name:wg-v6.cali
     dest: /etc/NetworkManager/conf.d/calico.conf
 
+- name: Ignore unused host NICs in NetworkManager
+  when: unmanaged_nics | default([]) | length > 0
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/conf.d/99-unmanaged-unused.conf
+    content: |
+      [keyfile]
+      unmanaged-devices={{ unmanaged_nics | map("regex_replace", "^(.*)$", "interface-name:\\1") | join(";") }}
+
+
 - name: Update all packages
   ansible.builtin.dnf:
     state: latest
@@ -153,3 +162,5 @@
     - "9000/tcp"
     - "5473/tcp"
     - "4789/udp"
+    - "7946/tcp"
+    - "7946/udp"

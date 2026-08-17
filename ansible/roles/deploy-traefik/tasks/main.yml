@@ -1,19 +1,21 @@
 # TODO:
-# kubectl create -n traefik secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
+# kubectl create -n traefik secret generic aws-credentials --from-literal=AWS_REGION=us-east-1 --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
 
 - name: Add Traefik Chart Repo
   kubernetes.core.helm_repository:
     name: traefik
     repo_url: https://helm.traefik.io/traefik
 
-- name: Deploy Latest Traefik
+- name: Deploy Traefik 41.2.0
   kubernetes.core.helm:
     name: traefik
     chart_ref: traefik/traefik
     release_namespace: traefik
     create_namespace: true
+    chart_version: "41.2.0"
     values:
       deployment:
+        replicas: 2
         imagePullSecrets:
           - name: regcred
         initContainers:
@@ -45,7 +47,6 @@
         checkNewVersion: true
 
       additionalArguments:
-        - "--api.insecure=true"
         - "--providers.file.directory=/config"
         # TODO: https://doc.traefik.io/traefik/providers/http/
 
@@ -80,8 +81,11 @@
           expose:
             default: true
           http:
-            middlewares:
-              - vault-chain-authelia-auth@kubernetescrd # TODO: needs testing
+            # Authelia middleware is applied per-IngressRoute, not here - entrypoint-wide
+            # application forced every request (including Authelia's own "bypass" domains)
+            # through forwardAuth, making authelia a single point of failure for everything.
+            # Add `middlewares: [{name: chain-authelia-auth, namespace: vault}]` on the
+            # route block of any IngressRoute that needs one_factor/two_factor protection.
             tls:
               enabled: true
               certResolver: "letsencrypt"
@@ -132,9 +136,14 @@
       persistence:
         enabled: true
         storageClass: "glass-cfg"
+        accessMode: "ReadWriteMany"
         name: "certs"
         path: "/data"
 
+      # CAVEAT: acme.json has no distributed locking - with replicas: 2 both pods share
+      # this RWX file but concurrent ACME renewal from both at once can corrupt it. Low
+      # risk here (single resolver, infrequent renewal), but if acme.json gets corrupted,
+      # drop to replicas: 1 to force a clean re-issue, then scale back up.
       certificatesResolvers:
         letsencrypt:
           acme:
@@ -156,9 +165,6 @@
         capabilities:
           drop: [ALL]
         readOnlyRootFilesystem: true
-
-      nodeSelector:
-        kubernetes.io/hostname: node1
 
       podSecurityContext:
         fsGroup: 65532

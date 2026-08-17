@@ -3,7 +3,8 @@ global:
   imagePullSecrets:
     - regcred
 image:
-  tag: 7.2.1-debian-11-r0
+  repository: bitnamilegacy/redis
+  tag: 8.2.1-debian-12-r0
 auth:
   existingSecret: "auth-redis"
   existingSecretPasswordKey: "redis-password"
@@ -25,7 +26,8 @@ replica:
 sentinel:
   enabled: true
   image:
-    tag: 7.2.1-debian-11-r0
+    repository: bitnamilegacy/redis-sentinel
+    tag: 8.2.1-debian-12-r0
   masterSet: authelia
   podSecurityContext:
     fsGroup: 65532
@@ -40,10 +42,12 @@ networkPolicy:
 metrics:
   enabled: true
   image:
-    tag: 1.54.0-debian-11-r0
+    repository: bitnamilegacy/redis-exporter
+    tag: 1.76.0-debian-12-r0
   containerSecurityContext:
     runAsUser: 65532
-volumePermissions: 
+volumePermissions:
   enabled: true
   image:
-    tag: 11-debian-11-r60
+    repository: bitnamilegacy/os-shell
+    tag: 12-debian-12-r51

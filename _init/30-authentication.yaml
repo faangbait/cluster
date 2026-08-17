@@ -5,7 +5,7 @@
 # kubectl create secret generic auth-redis --from-literal="redis-password=$(read -p "Redis Password: "; echo $REPLY)"
 #
 # helm repo add bitnami https://charts.bitnami.com/bitnami
-# helm install auth-redis bitnami/redis --values=ansible/files/kubernetes/values/storage/auth-redis-values.yaml
+# helm install auth-redis bitnami/redis --version 28.0.5 --values=ansible/files/kubernetes/values/storage/auth-redis-values.yaml
 #
 ##### AUTH #####################################################################
 
