@@ -24,6 +24,7 @@ spec:
   forwardAuth:
     address: http://authelia.vault.svc.cluster.local/api/verify?rd=https://sso.madeof.glass/
     trustForwardHeader: true
+    maxResponseBodySize: 4096
     authResponseHeaders:
       - Remote-User
       - Remote-Name
@@ -370,7 +371,7 @@ spec:
           port: 80
           namespace: vault
           passHostHeader: true
-          strategy: RoundRobin
+          strategy: wrr
           scheme: http
           responseForwarding:
             flushInterval: 100ms

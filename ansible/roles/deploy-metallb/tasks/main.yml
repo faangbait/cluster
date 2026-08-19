@@ -16,44 +16,24 @@
     name: metallb
     repo_url: https://metallb.github.io/metallb
 
-- name: Deploy MetalLB 0.15.3
+# 0.16.1 defaults to frr-k8s. Pin native FRR — that is the backend the gate ran.
+# This rolls the speaker DaemonSet. Do not run until 10.0.15.x LBs are gone.
+- name: Deploy MetalLB 0.16.1
   kubernetes.core.helm:
     name: metallb
     chart_ref: metallb/metallb
     release_namespace: metallb
     create_namespace: true
-    chart_version: "0.15.3"
+    chart_version: "0.16.1"
+    values:
+      speaker:
+        frr:
+          enabled: true
+      frrk8s:
+        enabled: false
 
-- name: Deploy MetalLB Resources - L2 Advertisement
+- name: Deploy MetalLB BGP resources
   kubernetes.core.k8s:
     state: present
-    api_version: metallb.io/v1beta1
-    kind: L2Advertisement
-    name: l2
-    namespace: metallb
-    definition:
-      spec:
-        # Only the intended LAN NICs. Do not list node2's onboard
-        # enp0s25 — NM once bound the SFP+ profile to that copper port.
-        interfaces:
-          - enp6s0f1  # node1 SFP+
-          - enp3s0f1  # node2 SFP+ (Aggregation)
-          - eno1       # node4
-
-- name: Deploy MetalLB Resources - IP Address Pool
-  kubernetes.core.k8s:
-    state: present
-    api_version: metallb.io/v1beta1
-    kind: IPAddressPool
-    name: default
-    namespace: metallb
-    definition:
-      spec:
-        addresses:
-          - 10.0.15.0/24
-
-# > ## PASS/FAIL: LoadBalancer External IP
-# > Install nginx with an external IP
-# > - `kubectl apply -f infrastructure/test-nginx.yaml`
-# > - `watch kubectl get svc -n default`
-
+    apply: true
+    src: "{{ playbook_dir }}/files/kubernetes/values/networking/metallb-resources.yaml"
