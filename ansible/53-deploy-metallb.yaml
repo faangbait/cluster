@@ -1,0 +1,9 @@
+- name: Deploy Metallb
+  hosts: localhost
+  connection: local
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Deploy Metallb
+      ansible.builtin.import_role:
+        name: deploy-metallb

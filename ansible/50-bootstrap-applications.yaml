@@ -12,7 +12,7 @@
         name: kubernetes
         state: present
       delegate_to: node1
-      
+
     - name: Deploy Calico
       ansible.builtin.import_role:
         name: deploy-calico
@@ -149,10 +149,6 @@
       run_once: true
       tags:
         - networking-test
-
-    - name: Deploy MetalLB
-      ansible.builtin.import_role:
-        name: deploy-metallb
 
     - name: Label Nodes
       ansible.builtin.shell: |

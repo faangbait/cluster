@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Source me. Exports UNIFI_HOST, UNIFI_API_KEY, UNIFI_BASE from repo .env
+#   . bin/unifi-env
+set -a
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
+set +a
+: "${UNIFI_API_KEY:?not set in .env}"
+export UNIFI_HOST="${UNIFI_HOST:-10.0.0.1}"
+export UNIFI_BASE="https://${UNIFI_HOST}/proxy/network/integration/v1"
