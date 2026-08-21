@@ -1,0 +1,26 @@
+# Node labels that must survive kubeadm.
+#
+# kubeadm applies node.kubernetes.io/exclude-from-external-load-balancers to
+# every control-plane node at init and re-applies it on `kubeadm upgrade apply`.
+# MetalLB honours that label unconditionally — the speaker peers and stays
+# Established but advertises no prefix — and offers no override of its own.
+# Removing the label is the only way to let a control-plane node advertise.
+#
+# node1 must advertise: hassio-service's only endpoint is a host-networked pod
+# on node1, so while node1 is excluded every flow to that VIP ingresses on
+# another node and has to reach the backend over an encapsulated cross-node
+# hop, which does not complete. Advertising from node1 also spreads ingress
+# three ways instead of two.
+#
+# Import this after anything that runs kubeadm.
+
+- name: Allow control-plane nodes to advertise LoadBalancer VIPs
+  kubernetes.core.k8s:
+    state: patched
+    kind: Node
+    name: "{{ item }}"
+    definition:
+      metadata:
+        labels:
+          node.kubernetes.io/exclude-from-external-load-balancers: null
+  loop: "{{ groups['controlplane'] }}"

@@ -14,6 +14,15 @@ spec:
   # NIC property), so zebra's connected nexthop is inactive and single-hop eBGP will
   # not resolve 10.0.0.1.
   ebgpMultiHop: true
+  # node4's bnx2x wedges with the link still up, so nothing tears the session down
+  # early — the UDM keeps forwarding into a dead next-hop for the whole hold time.
+  # Default is 90s. Hold time negotiates to the lower of the two ends, so setting it
+  # here alone is enough; the UDM needs no matching change.
+  #
+  # BFD would detect in <1s, but the UDM's FRR has no bfdd — `show bfd peers` returns
+  # "% Unknown command" — so timers are the only lever that works one-sided.
+  holdTime: 9s
+  keepaliveTime: 3s
 ---
 apiVersion: metallb.io/v1beta1
 kind: IPAddressPool

@@ -34,4 +34,23 @@ spec:
   selector:
     app: nginx
   type: LoadBalancer
-  loadBalancerIP: "10.0.15.120"
+  # Was 10.4.99.99, outside the MetalLB pool (10.4.0.0/22 ends at 10.4.3.255),
+  # so it never allocated.
+  loadBalancerIP: "10.4.3.99"
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: test-ingress
+  namespace: default
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`test.mon.madeof.glass`)
+      kind: Rule
+      services:
+        - name: nginx
+          port: http
+  tls:
+    certResolver: letsencrypt

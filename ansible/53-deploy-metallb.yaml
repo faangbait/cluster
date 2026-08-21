@@ -7,3 +7,10 @@
     - name: Deploy Metallb
       ansible.builtin.import_role:
         name: deploy-metallb
+
+    # MetalLB will not advertise from a node carrying
+    # exclude-from-external-load-balancers, so the labels have to be right
+    # before the speakers matter.
+    - name: Configure node labels
+      ansible.builtin.import_role:
+        name: configure-node-labels

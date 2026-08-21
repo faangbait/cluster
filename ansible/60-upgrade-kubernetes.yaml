@@ -176,3 +176,17 @@
     - name: Show upgraded nodes
       ansible.builtin.debug:
         var: final_node_versions.stdout_lines
+
+# kubeadm re-applies exclude-from-external-load-balancers on every
+# `kubeadm upgrade apply`, which silently stops node1 advertising VIPs.
+# Reassert the labels here, after the last upgrade stage.
+- name: Reassert node labels after the upgrade
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Configure node labels
+      ansible.builtin.import_role:
+        name: configure-node-labels
