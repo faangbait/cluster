@@ -1,0 +1,693 @@
+#!/usr/bin/env bash
+# recover-nic — recover a wedged PCI NIC, or watch for one.
+#
+# After an oops that did not panic, the module is still loaded and sick.
+# `modprobe $driver` is a no-op if it is already loaded; `ip link down/up`
+# calls ndo_stop/ndo_open in that same code. Neither is recovery.
+#
+# Two strikes per boot. Strike 1: evidence, `sysctl -w` panic_on_oops=1
+# and panic=10 (this boot only — nothing is written under /etc or grub),
+# and one unload+PCI-reset cycle if it was not an oops. Then wait.
+# Strike 2: reboot. After reboot /run is empty, so it is two strikes
+# again. A second oops after strike 1 panics on its own because of the
+# runtime sysctl.
+#
+# One-shot (console):
+#   recover-nic --driver ixgbe
+#   recover-nic eno1 -y
+#   recover-nic --diagnose
+#   recover-nic --force          # unload even without a TX timeout
+#   recover-nic --no-reboot
+#   recover-nic --dry-run
+#
+# Watchdog (systemd):
+#   recover-nic --watch --driver bnx2x
+#
+# Triggers are kernel signatures for this driver, not generic
+# connectivity loss. Does not loop unload.
+
+set -uo pipefail
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+WATCH=0
+DIAGNOSE_ONLY=0
+NO_REBOOT=0
+YES=0
+DRY_RUN=0
+FORCE=0
+IFACE_ARG=""
+DRIVER="${NIC_DRIVER:-}"
+INTERVAL=10
+SETTLE=60
+EVIDENCE_DIR=/var/log/nic-watchdog
+STATE_DIR=/run/nic-watchdog
+CMD_TIMEOUT=15
+CARRIER_WAIT=15
+RESET_WAIT=2
+SYSLOG_TAG=recover-nic
+OOPS_RE=""
+WEDGE_RE=""
+
+usage() {
+  awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+  exit "${1:-0}"
+}
+
+log() {
+  printf '%s %s: %s\n' "$(date -Is)" "$SYSLOG_TAG" "$*"
+}
+
+die() {
+  log "error: $*"
+  exit 1
+}
+
+tcmd() {
+  local secs=$1
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --foreground -k 5 "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
+notify() {
+  [[ -n "${NOTIFY_SOCKET:-}" ]] || return 0
+  command -v systemd-notify >/dev/null 2>&1 || return 0
+  systemd-notify "$@" >/dev/null 2>&1 || true
+}
+
+require_root() {
+  [[ $(id -u) -eq 0 ]] || die "must be root"
+}
+
+# --- discovery -------------------------------------------------------------
+
+driver_of() {
+  local p=/sys/class/net/$1/device/driver
+  [[ -e $p ]] || return 1
+  basename "$(tcmd 5 readlink -f "$p")"
+}
+
+driver_ifaces() {
+  local p iface
+  for p in /sys/class/net/*/device/driver; do
+    [[ -e $p ]] || continue
+    [[ $(basename "$(readlink -f "$p")") == "$DRIVER" ]] || continue
+    iface=$(basename "$(dirname "$(dirname "$p")")")
+    printf '%s\n' "$iface"
+  done
+}
+
+iface_bdf() {
+  local p=/sys/class/net/$1/device
+  [[ -e $p ]] || return 1
+  basename "$(tcmd 5 readlink -f "$p")"
+}
+
+admin_up() {
+  local flags
+  flags=$(tcmd 5 cat "/sys/class/net/$1/flags" 2>/dev/null) || return 1
+  (( flags & 0x1 ))
+}
+
+has_carrier() {
+  local c
+  c=$(tcmd 5 cat "/sys/class/net/$1/carrier" 2>/dev/null) || return 1
+  [[ $c == 1 ]]
+}
+
+known_loaded_drivers() {
+  local d
+  for d in ixgbe be2net bnx2x; do
+    [[ -d /sys/module/$d ]] || continue
+    printf '%s\n' "$d"
+  done
+}
+
+resolve_driver() {
+  if [[ -z $DRIVER && -n $IFACE_ARG ]]; then
+    DRIVER=$(driver_of "$IFACE_ARG") \
+      || die "cannot read driver for $IFACE_ARG"
+  fi
+  if [[ -z $DRIVER ]]; then
+    local -a ds
+    mapfile -t ds < <(known_loaded_drivers)
+    if ((${#ds[@]} == 1)); then
+      DRIVER=${ds[0]}
+    else
+      die "pass --driver (ixgbe | be2net | bnx2x); loaded: ${ds[*]:-none}"
+    fi
+  fi
+  [[ $DRIVER =~ ^[a-zA-Z0-9_]+$ ]] || die "bad driver name: $DRIVER"
+  # Skip unload, capture evidence, wait for strike 2 (or a panic).
+  OOPS_RE="Oops:|kernel BUG at|BUG: unable to handle|${DRIVER}_panic_dump"
+  # One unload cycle is worth trying.
+  WEDGE_RE="NETDEV WATCHDOG:.*\\(${DRIVER}\\)|NETDEV WATCHDOG:.*${DRIVER}|${DRIVER}:.*timed out|${DRIVER}_tx_timeout"
+}
+
+# --- kernel log ------------------------------------------------------------
+
+kernel_log() {
+  if command -v journalctl >/dev/null 2>&1; then
+    tcmd 20 journalctl -k -b --no-pager -o short-iso 2>/dev/null || tcmd 10 dmesg -T
+  else
+    tcmd 10 dmesg -T
+  fi
+}
+
+log_has() {
+  local re=$1
+  grep -E "$re" >/dev/null 2>&1
+}
+
+taint_died() {
+  local t
+  t=$(cat /proc/sys/kernel/tainted 2>/dev/null) || return 1
+  (( t & 128 ))
+}
+
+# --- evidence --------------------------------------------------------------
+
+collect_evidence() {
+  local iface=${1:-} bdf=${2:-} dest stamp
+  mkdir -p "$EVIDENCE_DIR"
+  stamp=$(date +%F-%H%M%S)
+  dest=$EVIDENCE_DIR/${DRIVER:-nic}-$stamp.dmesg
+  {
+    echo "===== $SYSLOG_TAG $DRIVER evidence $stamp ====="
+    echo "host: $(hostname -f 2>/dev/null || hostname)"
+    echo "uname: $(uname -a)"
+    echo "tainted: $(cat /proc/sys/kernel/tainted 2>/dev/null || echo unknown)"
+    echo "panic_on_oops: $(sysctl -n kernel.panic_on_oops 2>/dev/null || echo unknown)"
+    echo "panic: $(sysctl -n kernel.panic 2>/dev/null || echo unknown)"
+    echo "iface: ${iface:-unset}  bdf: ${bdf:-unset}  driver: ${DRIVER:-unset}"
+    echo
+    echo "===== ip -br link ====="
+    tcmd 5 ip -br link || true
+    echo
+    echo "===== lsmod $DRIVER ====="
+    lsmod | grep -E "^$DRIVER" || true
+    echo
+    echo "===== dmesg ====="
+    tcmd 15 dmesg -T || true
+    if [[ -n $iface && -e /sys/class/net/$iface ]]; then
+      echo
+      echo "===== ethtool -i $iface ====="
+      tcmd 5 ethtool -i "$iface" || echo "(ethtool -i failed or hung)"
+      echo
+      echo "===== ethtool $iface ====="
+      tcmd 5 ethtool "$iface" || echo "(ethtool failed or hung)"
+      echo
+      echo "===== ethtool -S $iface (timeout/error lines) ====="
+      tcmd 5 ethtool -S "$iface" 2>/dev/null | grep -Ei 'timeout|error|fifo|fatal|parity' || true
+    fi
+    if [[ -n $bdf ]] && command -v lspci >/dev/null 2>&1; then
+      echo
+      echo "===== lspci -nnvs $bdf ====="
+      tcmd 10 lspci -nnvs "$bdf" || true
+    fi
+  } >"$dest" 2>&1
+  log "evidence: $dest"
+  printf '%s\n' "$dest"
+}
+
+# --- reboot / arm ----------------------------------------------------------
+
+sysrq_on() {
+  echo 1 >/proc/sys/kernel/sysrq 2>/dev/null || true
+}
+
+# Runtime only. sysctl -w does not write /etc/sysctl* or grub; a reboot
+# restores the previous values.
+arm_oops_panic() {
+  log "arm kernel.panic_on_oops=1 kernel.panic=10 for this boot"
+  if (( DRY_RUN )); then
+    log "dry-run: would sysctl -w"
+    return 0
+  fi
+  tcmd 5 sysctl -w kernel.panic_on_oops=1 || log "sysctl panic_on_oops failed"
+  tcmd 5 sysctl -w kernel.panic=10 || log "sysctl panic failed"
+}
+
+reboot_now() {
+  local reason=$1
+  local iface=${2:-} bdf=${3:-}
+  log "reboot: $reason"
+  collect_evidence "$iface" "$bdf" >/dev/null || true
+  if (( DRY_RUN )); then
+    log "dry-run: would reboot"
+    return 2
+  fi
+  if (( NO_REBOOT )); then
+    log "--no-reboot: not rebooting"
+    return 2
+  fi
+  if (( ! WATCH && ! YES )); then
+    if [[ -t 0 ]]; then
+      local a
+      read -r -p "reboot now? [y/N] " a
+      [[ $a == [yY] ]] || { log "reboot declined"; return 2; }
+    else
+      log "non-interactive oneshot: pass -y to reboot"
+      return 2
+    fi
+  fi
+  sync || true
+  sysrq_on
+  ( sleep 30; echo b >/proc/sysrq-trigger ) &
+  reboot
+  sleep 45
+  log "reboot(8) returned or hung; sysrq-b"
+  echo b >/proc/sysrq-trigger
+  exit 1
+}
+
+# --- strikes (per boot; /run is tmpfs) -------------------------------------
+
+strike_file=$STATE_DIR/strike
+
+strike_count() {
+  local n
+  n=$(cat "$strike_file" 2>/dev/null) || n=0
+  printf '%s\n' "$n"
+}
+
+record_strike() {
+  mkdir -p "$STATE_DIR"
+  echo 1 >"$strike_file"
+}
+
+# --- recover (one cycle, never reboots, never loops) -----------------------
+
+unload_tree() {
+  local m=$1 h rc
+  [[ -d /sys/module/$m ]] || return 0
+  for h in /sys/module/$m/holders/*; do
+    [[ -e $h ]] || continue
+    unload_tree "$(basename "$h")" || return $?
+  done
+  log "unload $m"
+  if (( DRY_RUN )); then
+    return 0
+  fi
+  tcmd "$CMD_TIMEOUT" modprobe -r "$m"
+  rc=$?
+  if (( rc == 124 || rc == 137 )); then
+    return 124
+  fi
+  if (( rc != 0 )); then
+    return 1
+  fi
+  return 0
+}
+
+wait_carrier() {
+  local iface=$1 n=0
+  while (( n < CARRIER_WAIT )); do
+    notify WATCHDOG=1
+    if has_carrier "$iface"; then
+      return 0
+    fi
+    sleep 1
+    n=$((n + 1))
+  done
+  return 1
+}
+
+# Unload every port of $DRIVER, PCI-reset, reload. Returns 0/1/124.
+# Does not reboot — the strike policy decides that.
+recover_once() {
+  local reason=$1
+  local -a ifaces bdbs
+  local iface bdf rc
+
+  mapfile -t ifaces < <(driver_ifaces)
+  if [[ -n $IFACE_ARG ]]; then
+    local found=0
+    for iface in "${ifaces[@]}"; do
+      [[ $iface == "$IFACE_ARG" ]] && found=1
+    done
+    (( found )) || die "$IFACE_ARG is not a $DRIVER interface"
+  fi
+  ((${#ifaces[@]})) || { log "no $DRIVER iface to recover"; return 1; }
+
+  bdbs=()
+  for iface in "${ifaces[@]}"; do
+    bdf=$(iface_bdf "$iface") || bdf=""
+    bdbs+=("$bdf")
+    log "recover $iface bdf=${bdf:-unknown} driver=$DRIVER reason=$reason"
+  done
+
+  if (( DRY_RUN )); then
+    log "dry-run: would down ${ifaces[*]}, rmmod $DRIVER, pci reset ${bdbs[*]}, modprobe, up"
+    return 0
+  fi
+
+  for iface in "${ifaces[@]}"; do
+    log "ip link set $iface down"
+    if ! tcmd "$CMD_TIMEOUT" ip link set "$iface" down; then
+      log "ip link down hung or failed on $iface"
+      return 1
+    fi
+  done
+
+  unload_tree "$DRIVER"
+  rc=$?
+  if (( rc != 0 )); then
+    log "modprobe -r $DRIVER failed rc=$rc"
+    return "$rc"
+  fi
+
+  local i
+  for i in "${!ifaces[@]}"; do
+    bdf=${bdbs[$i]:-}
+    [[ -n $bdf ]] || continue
+    local reset=/sys/bus/pci/devices/$bdf/reset
+    if [[ -w $reset ]]; then
+      log "pci reset $bdf"
+      tcmd "$CMD_TIMEOUT" bash -c "echo 1 >\"$reset\"" \
+        || log "pci reset failed on $bdf (continuing to reload)"
+    else
+      log "no $reset (device has no FLR); continuing to reload"
+    fi
+  done
+  sleep "$RESET_WAIT"
+  notify WATCHDOG=1
+
+  log "modprobe $DRIVER"
+  if ! tcmd 30 modprobe "$DRIVER"; then
+    log "modprobe $DRIVER failed or hung"
+    return 1
+  fi
+
+  for iface in "${ifaces[@]}"; do
+    local n=0
+    while [[ ! -e /sys/class/net/$iface ]] && (( n < 10 )); do
+      notify WATCHDOG=1
+      sleep 1
+      n=$((n + 1))
+    done
+    if [[ ! -e /sys/class/net/$iface ]]; then
+      log "$iface did not reappear after reload"
+      return 1
+    fi
+    log "ip link set $iface up"
+    if ! tcmd "$CMD_TIMEOUT" ip link set "$iface" up; then
+      log "ip link up hung or failed on $iface"
+      return 1
+    fi
+    if command -v nmcli >/dev/null 2>&1; then
+      tcmd 10 nmcli device connect "$iface" >/dev/null 2>&1 || \
+        tcmd 10 nmcli connection up "$iface" >/dev/null 2>&1 || true
+    fi
+  done
+
+  log "waiting ${CARRIER_WAIT}s for firmware + carrier"
+  local ok=0
+  for iface in "${ifaces[@]}"; do
+    if wait_carrier "$iface"; then
+      log "$iface: carrier back"
+      ok=1
+    else
+      log "$iface: no carrier"
+    fi
+  done
+  if (( ! ok )); then
+    log "carrier did not return after one unload cycle"
+    return 1
+  fi
+  log "recover succeeded"
+  return 0
+}
+
+# --- diagnose --------------------------------------------------------------
+
+diagnose() {
+  local -a ifaces
+  local iface bdf klog oops=0 wedge=0
+
+  log "=== diagnose driver=$DRIVER ==="
+  mapfile -t ifaces < <(driver_ifaces)
+  if [[ -n $IFACE_ARG ]]; then
+    [[ $(driver_of "$IFACE_ARG" 2>/dev/null) == "$DRIVER" ]] \
+      || die "$IFACE_ARG is not a $DRIVER interface"
+    ifaces=("$IFACE_ARG")
+  fi
+
+  if ((${#ifaces[@]} == 0)); then
+    log "no $DRIVER netdev. lsmod:"
+    lsmod | grep -E "^$DRIVER" || log "$DRIVER is not loaded"
+    tcmd 5 ip -br link || true
+    return 0
+  fi
+
+  for iface in "${ifaces[@]}"; do
+    bdf=$(iface_bdf "$iface" || true)
+    log "iface=$iface bdf=${bdf:-unknown} driver=$DRIVER"
+    tcmd 5 ip -br link show "$iface" || true
+    if admin_up "$iface"; then
+      if has_carrier "$iface"; then
+        log "$iface: admin UP, carrier OK"
+      else
+        log "$iface: admin UP, NO carrier"
+      fi
+    else
+      log "$iface: admin DOWN (ignored unless you name it)"
+    fi
+  done
+
+  log "=== lsmod ==="
+  lsmod | grep -E "^$DRIVER" || true
+
+  log "=== dmesg tail ==="
+  tcmd 10 dmesg -T | tail -n 80 || true
+
+  klog=$(kernel_log || true)
+  if taint_died; then
+    log "taint DIE is set (an oops happened this boot; not by itself a verdict)"
+  fi
+  if printf '%s\n' "$klog" | log_has "$OOPS_RE"; then
+    oops=1
+    log "verdict: OOPS. skip unload."
+  fi
+  if printf '%s\n' "$klog" | log_has "$WEDGE_RE"; then
+    wedge=1
+    log "verdict: TX timeout / NETDEV WATCHDOG"
+  fi
+  if (( ! oops && ! wedge && FORCE )); then
+    log "verdict: --force, no signature"
+  fi
+  if (( ! oops && ! wedge && ! FORCE )); then
+    log "verdict: no oops, no TX timeout in this boot's kernel log"
+  fi
+
+  printf '%s\n' "$klog" | grep -E "$OOPS_RE|$WEDGE_RE|$DRIVER|taint" | tail -n 40 \
+    | while IFS= read -r line; do log "klog $line"; done
+
+  if (( oops || wedge || FORCE || ! WATCH )); then
+    collect_evidence "${ifaces[0]}" "$(iface_bdf "${ifaces[0]}" || true)" >/dev/null || true
+  fi
+
+  if (( oops )); then
+    return 10
+  fi
+  if (( wedge )); then
+    return 11
+  fi
+  return 0
+}
+
+# First detection this boot: arm panic for *this* boot, try unload if it
+# was not an oops, then wait. Second detection: reboot.
+handle_detection() {
+  local kind=$1
+  local -a ifaces
+  mapfile -t ifaces < <(driver_ifaces)
+  local iface=${ifaces[0]:-}
+  local bdf=""
+  [[ -n $iface ]] && bdf=$(iface_bdf "$iface" || true)
+
+  log "event: $kind strike=$(strike_count)"
+
+  if [[ $(strike_count) -ge 1 ]]; then
+    reboot_now "second $DRIVER detection this boot ($kind)" "$iface" "$bdf"
+    return $?
+  fi
+
+  record_strike
+  arm_oops_panic
+  if [[ $kind != oops ]]; then
+    recover_once "$kind" || log "unload cycle did not recover; waiting for second detection"
+  else
+    log "oops: not unloading"
+  fi
+  log "strike 1 done; panic_on_oops armed until reboot; waiting for second detection"
+  return 0
+}
+
+oneshot() {
+  require_root
+  mkdir -p "$EVIDENCE_DIR" "$STATE_DIR"
+  diagnose
+  local rc=$?
+  if (( DIAGNOSE_ONLY )); then
+    exit 0
+  fi
+  case $rc in
+    0)
+      if (( FORCE )); then
+        handle_detection force
+        exit $?
+      fi
+      log "nothing to recover"
+      exit 0
+      ;;
+    10)
+      handle_detection oops
+      exit $?
+      ;;
+    11)
+      handle_detection wedge
+      exit $?
+      ;;
+    *)
+      die "diagnose failed"
+      ;;
+  esac
+}
+
+# --- watchdog --------------------------------------------------------------
+
+iface_ioctl_dead() {
+  local iface=$1 rc
+  admin_up "$iface" || return 1
+  tcmd 5 ethtool -i "$iface" >/dev/null 2>&1
+  rc=$?
+  (( rc == 124 || rc == 137 ))
+}
+
+scan_new_klog() {
+  local out
+  if [[ -z ${cursor:-} ]]; then
+    cursor=$(journalctl -k -n 0 --show-cursor --quiet 2>/dev/null \
+      | sed -n 's/^-- cursor: //p')
+    return 0
+  fi
+  out=$(tcmd 15 journalctl -k --after-cursor="$cursor" --no-pager --show-cursor --quiet 2>/dev/null) || return 0
+  cursor=$(printf '%s\n' "$out" | sed -n 's/^-- cursor: //p' | tail -n 1)
+  printf '%s\n' "$out" | grep -v '^-- cursor: '
+}
+
+watch_loop() {
+  require_root
+  mkdir -p "$EVIDENCE_DIR" "$STATE_DIR"
+
+  if [[ ! -d /sys/module/$DRIVER ]]; then
+    log "$DRIVER not loaded; nothing to watch"
+    notify READY=1
+    exit 0
+  fi
+
+  log "watch start driver=$DRIVER settle=${SETTLE}s interval=${INTERVAL}s"
+  notify READY=1
+  notify WATCHDOG=1
+
+  local n=0
+  while (( n < SETTLE )); do
+    notify WATCHDOG=1
+    sleep 1
+    n=$((n + 1))
+  done
+
+  diagnose
+  local rc=$?
+  case $rc in
+    10) handle_detection oops ;;
+    11) handle_detection wedge ;;
+  esac
+
+  cursor=""
+  scan_new_klog >/dev/null || true
+
+  while true; do
+    notify WATCHDOG=1
+    local new kind=""
+    new=$(scan_new_klog || true)
+    if printf '%s\n' "$new" | log_has "$OOPS_RE"; then
+      kind=oops
+    elif printf '%s\n' "$new" | log_has "$WEDGE_RE"; then
+      kind=wedge
+    fi
+    # ethtool hang is strike 1 only. After that we wait for a new oops
+    # or NETDEV WATCHDOG line — a still-dead ioctl is not a second oops.
+    if [[ -z $kind && $(strike_count) -eq 0 ]]; then
+      local iface
+      while IFS= read -r iface; do
+        [[ -n $iface ]] || continue
+        if iface_ioctl_dead "$iface"; then
+          kind=ioctl-dead
+          log "$iface: ethtool ioctl hung"
+          break
+        fi
+      done < <(driver_ifaces)
+    fi
+    if [[ -n $kind ]]; then
+      handle_detection "$kind"
+    fi
+    sleep "$INTERVAL"
+  done
+}
+
+# --- args ------------------------------------------------------------------
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help) usage 0 ;;
+    --watch) WATCH=1 ;;
+    --diagnose) DIAGNOSE_ONLY=1 ;;
+    --no-reboot) NO_REBOOT=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    --force) FORCE=1 ;;
+    -y|--yes) YES=1 ;;
+    --driver)
+      DRIVER=${2:?}
+      shift
+      ;;
+    --interval)
+      INTERVAL=${2:?}
+      shift
+      ;;
+    --settle)
+      SETTLE=${2:?}
+      shift
+      ;;
+    --evidence-dir)
+      EVIDENCE_DIR=${2:?}
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      die "unknown option $1"
+      ;;
+    *)
+      [[ -z $IFACE_ARG ]] || die "extra argument $1"
+      IFACE_ARG=$1
+      ;;
+  esac
+  shift
+done
+
+resolve_driver
+SYSLOG_TAG=recover-nic/$DRIVER
+
+if (( WATCH )); then
+  watch_loop
+else
+  oneshot
+fi

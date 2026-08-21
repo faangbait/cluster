@@ -85,16 +85,12 @@ curl -k -sS "$UNIFI_BASE/sites/$SITE_ID/firewall/policies/$POLICY_ID" \
   | jq '.source.trafficFilter.macAddressFilter.macAddresses | length, .'
 ```
 
-## Host-level rules are separate
+## This policy is the whole allowlist
 
-This policy only gets the packet to the node. The node's own `firewalld` decides whether
-it is served — see Stage 6.3 in `../migration-rollout.md`.
+`firewalld` on the nodes serves `nfs` to any source that reaches it. What decides whether
+a client reaches it is this policy.
 
-**firewalld rich rules cannot match MAC**; they match source addresses only. So a client
-added here and nowhere else still fails if firewalld is restricting NFS by address.
-
-If NFS still fails after this change, check firewalld on the node before re-reading
-anything above.
+So if NFS fails after adding a MAC, the cause is here or on the client — not on the node.
 
 ## Removing a MAC
 

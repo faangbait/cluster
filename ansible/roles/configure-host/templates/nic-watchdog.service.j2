@@ -1,0 +1,20 @@
+[Unit]
+Description=Watchdog for a wedged {{ nic_driver }} NIC
+Documentation=file:///usr/local/sbin/recover-nic
+After=systemd-modules-load.service systemd-udevd.service
+ConditionPathExists=/sys/module/{{ nic_driver }}
+# Process stopped notifying (stuck in D-state on rmmod, or dead). reboot -f.
+FailureAction=reboot-force
+
+[Service]
+Type=notify
+ExecStart=/usr/local/sbin/recover-nic --watch --driver {{ nic_driver }}
+NotifyAccess=main
+WatchdogSec=180
+Restart=no
+StandardOutput=journal
+StandardError=journal
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

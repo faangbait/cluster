@@ -3,7 +3,7 @@
     path: /etc/hosts
     block: |
       10.0.8.254 node1 tengig1 k8s-control-plane-lb
-      10.0.8.253 node2 tengig2 
+      10.0.8.253 node2 tengig2
       10.0.8.252 node3 tengig3
       10.0.8.251 node4 tengig4
     backup: true
@@ -15,15 +15,15 @@
   loop:
     - overlay
     - br_netfilter
-  
+
 - name: Configure Sysctl (bridge)
   ansible.posix.sysctl:
     name: "{{ item }}"
     value: '1'
     sysctl_set: true
   loop:
-    - net.bridge.bridge-nf-call-iptables 
-    - net.ipv4.ip_forward                
+    - net.bridge.bridge-nf-call-iptables
+    - net.ipv4.ip_forward
     - net.bridge.bridge-nf-call-ip6tables
 
 - name: Configure Sysctl (somaxconn)
@@ -31,6 +31,48 @@
     name: "net.core.somaxconn"
     value: '10000'
     sysctl_set: true
+
+- name: NIC wedge watchdog
+  when:
+    - nic_driver is defined
+    - inventory_hostname not in ["node3", "localhost"]
+  block:
+    - name: Install nic recover watchdog
+      ansible.builtin.copy:
+        src: recover-nic
+        dest: /usr/local/sbin/recover-nic
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Syntax-check recover-nic
+      ansible.builtin.command: bash -n /usr/local/sbin/recover-nic
+      changed_when: false
+
+    - name: Install nic watchdog unit
+      ansible.builtin.template:
+        src: nic-watchdog.service.j2
+        dest: /etc/systemd/system/nic-watchdog.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable nic watchdog
+      ansible.builtin.systemd_service:
+        name: nic-watchdog
+        enabled: true
+        daemon_reload: true
+
+    - name: Check for nic driver module
+      ansible.builtin.stat:
+        path: "/sys/module/{{ nic_driver }}"
+      register: nic_module
+
+    - name: Start nic watchdog
+      when: nic_module.stat.exists
+      ansible.builtin.systemd_service:
+        name: nic-watchdog
+        state: started
 
 # Necessary for redis, which is used in our authentication app deployment.
 # If you're standing up a non-redis cluster and won't be deploying any of the apps provided in the subfolders, you can skip this.
