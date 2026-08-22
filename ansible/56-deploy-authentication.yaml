@@ -298,6 +298,21 @@
                   policy: one_factor
                 - domain: '*.news.madeof.glass'
                   policy: one_factor
+                # Alexa Lambda POST + Amazon token exchange. Anchored + POST-only.
+                # Do not unanchor these regexes and do not drop `resources`.
+                # Lovelace /auth/authorize stay one_factor via the glob below.
+                - domain: 'ai.home.madeof.glass'
+                  resources:
+                    - '^/api/alexa/smart_home$'
+                  methods:
+                    - POST
+                  policy: bypass
+                - domain: 'ai.home.madeof.glass'
+                  resources:
+                    - '^/auth/token$'
+                  methods:
+                    - POST
+                  policy: bypass
                 - domain: '*.home.madeof.glass'
                   policy: one_factor
 
@@ -444,6 +459,13 @@
                 labels:
                   app.kubernetes.io/name: authelia
                   app.kubernetes.io/part-of: auth
+                # telemetry.metrics in the ConfigMap has been listening on 9999
+                # all along with nothing scraping it. Picked up by the
+                # `kubernetes-pods` job in 57.
+                annotations:
+                  prometheus.io/scrape: "true"
+                  prometheus.io/port: "9999"
+                  prometheus.io/path: /metrics
               spec:
                 imagePullSecrets:
                   - name: regcred
@@ -472,6 +494,9 @@
                   ports:
                   - name: http
                     containerPort: 9091
+                    protocol: TCP
+                  - name: metrics
+                    containerPort: 9999
                     protocol: TCP
                   volumeMounts:
                   - mountPath: /config

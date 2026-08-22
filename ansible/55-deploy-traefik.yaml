@@ -70,6 +70,13 @@
             kubernetesCRD:
               allowCrossNamespace: true
 
+          # No metrics Service or ServiceMonitor: the pods already carry
+          # prometheus.io/{scrape,port,path} and the `kubernetes-pods` job in
+          # 57 discovers them by annotation.
+          metrics:
+            prometheus:
+              addRoutersLabels: true
+
           ports:
             metrics:
               port: 9999

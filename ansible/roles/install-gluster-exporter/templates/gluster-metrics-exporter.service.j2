@@ -1,0 +1,24 @@
+[Unit]
+Description=Gluster Metrics Exporter
+Documentation=https://github.com/kadalu/gluster-metrics-exporter
+# The exporter shells out to the gluster CLI. Without glusterd it starts, then
+# reports every volume as an error, which reads as an outage rather than a
+# start-order problem.
+After=network-online.target glusterd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root deliberately: `gluster volume status` talks to the glusterd
+# unix socket, which is root-only. There is no read-only gluster role to drop to.
+ExecStart={{ gluster_exporter_bin }} \
+    --port={{ gluster_exporter_port }} \
+    --host-binding={{ gluster_exporter_bind }} \
+    --cluster={{ gluster_exporter_cluster }} \
+    --gluster-host={{ inventory_hostname }} \
+    --log-dir={{ gluster_exporter_log_dir }}
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

@@ -207,3 +207,9 @@
     - "7946/tcp"
     - "7946/udp"
     - "8123/tcp"
+    # node_exporter. kube-prometheus-stack deploys the DaemonSet with
+    # hostNetwork, so Prometheus scrapes the node address directly and this
+    # has to be open. It wasn't, so every host metric silently failed with
+    # "no route to host" from the day the stack was deployed — the exporters
+    # were listening the whole time.
+    - "9100/tcp"

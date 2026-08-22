@@ -1,0 +1,85 @@
+# kadalu/gluster-metrics-exporter, not gluster/gluster-prometheus: the latter
+# was archived upstream in 2022. This one is quiet rather than dead — Gluster
+# itself is frozen, and the exporter only shells out to the gluster CLI.
+#
+# Installed from the pinned release asset rather than upstream's
+# `curl ... | sudo bash -x`, which pipes an unverified binary into root and
+# always resolves to `latest`.
+
+- name: Derive the exporter bind address from the inventory
+  ansible.builtin.set_fact:
+    gluster_exporter_bind: "{{ nmcli_ip4 | split('/') | first }}"
+
+- name: Create the exporter log directory
+  ansible.builtin.file:
+    path: "{{ gluster_exporter_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install the gluster-metrics-exporter binary
+  ansible.builtin.get_url:
+    url: "{{ gluster_exporter_url }}"
+    dest: "{{ gluster_exporter_bin }}"
+    checksum: "sha256:{{ gluster_exporter_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart gluster-metrics-exporter
+
+- name: Install the gluster-metrics-exporter unit
+  ansible.builtin.template:
+    src: gluster-metrics-exporter.service.j2
+    dest: /etc/systemd/system/gluster-metrics-exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart gluster-metrics-exporter
+
+# Bound to the node's cluster address, so this is the same trust boundary as
+# glusterd itself. Prometheus scrapes it from the pod network.
+- name: Allow the exporter port through firewalld
+  ansible.posix.firewalld:
+    port: "{{ gluster_exporter_port }}/tcp"
+    state: enabled
+    permanent: true
+    immediate: true
+    zone: public
+
+- name: Enable gluster-metrics-exporter
+  ansible.builtin.systemd_service:
+    name: gluster-metrics-exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Flush handlers so the verification below tests the running build
+  ansible.builtin.meta: flush_handlers
+
+# The parser is a Crystal binding over `gluster --xml`. It was last touched
+# upstream in 2024, before Gluster 11.1 — so assert it actually parses our
+# volumes instead of trusting that it does. A broken parser still serves 200s;
+# it just reports zero volumes.
+- name: Scrape the exporter
+  ansible.builtin.uri:
+    url: "http://{{ gluster_exporter_bind }}:{{ gluster_exporter_port }}/metrics"
+    return_content: true
+  register: gluster_exporter_scrape
+  retries: 6
+  delay: 5
+  until: gluster_exporter_scrape is succeeded
+
+- name: Assert the exporter parses this Gluster version
+  ansible.builtin.assert:
+    that:
+      - "'glusterfs_volume_health' in gluster_exporter_scrape.content"
+      - "'glass_cfg' in gluster_exporter_scrape.content"
+    fail_msg: >-
+      gluster-metrics-exporter {{ gluster_exporter_version }} is serving metrics
+      on {{ inventory_hostname }} but did not report the glass_cfg volume. Its
+      gluster CLI parser predates Gluster 11, so it is likely failing to parse
+      `gluster volume info --xml`. Check
+      {{ gluster_exporter_log_dir }}/exporter.log before trusting any Gluster
+      dashboard.
+    quiet: true

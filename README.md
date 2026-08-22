@@ -22,7 +22,7 @@ rest build the cluster on top.
 
 - `10-provision-cluster.yaml` — provisions a fresh Rocky box
 - `11-configure-hosts.yaml` — host-specific variables
-- `20-bootstrap-gluster.yaml` — installs and configures GlusterFS
+- `20-bootstrap-gluster.yaml` — installs and configures GlusterFS, and the metrics exporter that goes with it (`--tags gluster-exporter` to do only that)
 - `30-bootstrap-control-plane.yaml` — Kubernetes on the control plane
 - `40-bootstrap-workers.yaml` — Kubernetes on the workers
 - `50-bootstrap-applications.yaml` — Calico, then a pass/fail networking test
@@ -42,7 +42,7 @@ and safe to re-run.
 - `53-deploy-metallb.yaml` — __Load balancing__: MetalLB, its BGP peer and address pool, plus the node labels its speakers depend on.
 - `55-deploy-traefik.yaml` — __Ingress__: Traefik, the `traefik-configmap` its file provider reads, and the split-horizon DNS that makes its routes resolvable — two ExternalDNS instances (UniFi for the LAN view, Route53 for the public view) plus the `wan-target` CronJob that keeps the public target current. Needs `glass-cfg` from `52` for its `acme.json`.
 - `56-deploy-authentication.yaml` — __Authentication__: Authelia as a universal authentication layer, its Redis session store, and the Traefik middleware chain that fronts protected routes.
-- `57-deploy-monitoring.yaml` — __Observability__: kube-prometheus-stack.
+- `57-deploy-monitoring.yaml` — __Observability__: kube-prometheus-stack, plus the scrape targets it doesn't know about — a static job for the Gluster exporters on the nodes, and unpoller for UDM Pro/switch/AP metrics off the UniFi API. In-cluster services are discovered by `prometheus.io/scrape` pod annotations rather than ServiceMonitors, so adding a target usually means annotating a pod, not writing a CR.
 - `58-deploy-privateregistry.yaml` — __Registry__: the in-cluster image registry.
 - `59-deploy-postgresql.yaml` — __Database__: PostgreSQL. Major-version upgrades are a runbook, not a re-run — see [`docs/runbooks/postgresql-major-upgrade.md`](docs/runbooks/postgresql-major-upgrade.md).
 
@@ -61,6 +61,16 @@ and ExternalDNS `aws-credentials`, and the ExternalDNS `unifi-dns` secret exist
 only in the live cluster — there is no stored copy, so writing one would
 silently replace working credentials. The playbooks look them up and fail with
 the exact `kubectl create secret ...` command when one is missing.
+
+__`external-dns/unifi-dns` is the source of truth for the UniFi API key.__ The
+key is console-scoped and cannot be narrowed, so there is exactly one of it and
+it lives in the `external-dns` namespace. Secrets don't cross namespaces, so
+`57` mirrors it into `observability` for unpoller — same name, same
+`UNIFI_HOST` / `UNIFI_API_KEY` keys, remapped to unpoller's `UP_*` env vars in
+the container spec rather than reshaping the secret. Copying a live secret is
+not the same as authoring one, which is why that copy is allowed to be a
+playbook task. __Rotate it in `external-dns` and re-run `57`__; never edit the
+`observability` copy directly, it is overwritten on every run.
 
 __ExternalDNS target annotations.__ IngressRoutes carry
 `external-dns.internal/target` (the Traefik VIP `10.4.0.2`, committed

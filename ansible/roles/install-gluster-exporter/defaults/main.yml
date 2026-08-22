@@ -1,0 +1,15 @@
+# Pinned. Unpinned, a re-run would silently swap the binary under a running
+# service. Bump deliberately, and update the checksum with it:
+#   curl -sL "$url" | sha256sum
+gluster_exporter_version: "0.5.2"
+gluster_exporter_sha256: "3699b54a8e3d0f780adc362640b41f39a7a96b1a83fd119597fd8237328c8bd9"
+gluster_exporter_url: >-
+  https://github.com/kadalu/gluster-metrics-exporter/releases/download/{{ gluster_exporter_version }}/gluster-metrics-exporter-amd64
+
+gluster_exporter_bin: /usr/sbin/gluster-metrics-exporter
+gluster_exporter_port: 9713
+gluster_exporter_log_dir: /var/log/gluster-metrics
+
+# Tags every series with the cluster it came from, so a second Gluster pool
+# later doesn't collide in Prometheus.
+gluster_exporter_cluster: glass

@@ -7,6 +7,16 @@
       ansible.builtin.import_role:
         name: install-gluster
 
+    # Tagged so it can be run on its own against a cluster that is already
+    # storing data:
+    #   ansible-playbook -i inventory/hosts.yml 20-bootstrap-gluster.yaml \
+    #     --tags gluster-exporter
+    - name: Set up the Gluster metrics exporter
+      ansible.builtin.import_role:
+        name: install-gluster-exporter
+      tags:
+        - gluster-exporter
+
     - name: Set facts
       ansible.builtin.set_fact:
         nodes_to_peer: []

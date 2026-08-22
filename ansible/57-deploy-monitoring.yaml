@@ -3,7 +3,25 @@
   connection: local
   become: false
   any_errors_fatal: true
+  vars:
+    # node3 is the workstation, not a cluster member, so it isn't in the
+    # inventory and its address lives here. Alertmanager pushes to it rather
+    # than node3 polling: Alertmanager's ClusterIP isn't routable off-cluster
+    # and its Ingress is behind the Authelia middleware chain.
+    alert_notify_url: "http://10.0.8.252:9099/"
   tasks:
+    # gluster-metrics-exporter is a systemd service on the storage nodes, not a
+    # pod, so the annotation-discovery job below can't find it. Built from the
+    # inventory so no node address is hardcoded here.
+    - name: Build the Gluster scrape targets from the inventory
+      ansible.builtin.set_fact:
+        gluster_static_configs: >-
+          {{ gluster_static_configs | default([]) + [{
+               'targets': [hostvars[item].nmcli_ip4 | split('/') | first ~ ':9713'],
+               'labels': {'node': item}
+             }] }}
+      loop: "{{ groups['cluster'] }}"
+
     - name: Add Prometheus Community Chart Repo
       kubernetes.core.helm_repository:
         name: prometheus-community
@@ -28,7 +46,75 @@
             imagePullSecrets:
               - "regcred"
 
+          # The chart assumes control-plane components listen on the node IP.
+          # kubeadm binds them to 127.0.0.1 — scheduler and controller-manager
+          # via --bind-address, etcd via --listen-metrics-urls — and has since
+          # k8s 1.17, as CIS hardening. Left enabled, all three scrape jobs are
+          # permanently down and raise TargetDown plus etcdInsufficientMembers.
+          #
+          # Off, not rebound. Exposing them would undo a CIS control to satisfy
+          # a monitoring default, which is backwards for this cluster. The
+          # apiserver's /readyz reports on all three anyway.
+          #
+          # The cost is real and worth naming: no scheduler queue depth, no
+          # controller-manager workqueue latency, no etcd fsync/commit
+          # histograms. Re-enable alongside the bind changes if that day comes.
+          kubeEtcd:
+            enabled: false
+          kubeScheduler:
+            enabled: false
+          kubeControllerManager:
+            enabled: false
+
+          # Different reason: there is no kube-proxy to scrape. 30 runs
+          # `kubeadm init --skip-phases=addon/kube-proxy` and Calico handles
+          # it, so this ServiceMonitor selects nothing. Silent dead config
+          # rather than a firing alert, but dead either way.
+          kubeProxy:
+            enabled: false
+
           alertmanager:
+            # Setting `config` replaces the chart default wholesale rather than
+            # merging, so the inhibit rule and the Watchdog route have to be
+            # restated here or they are silently lost.
+            config:
+              global:
+                resolve_timeout: 5m
+              inhibit_rules:
+                # A critical and a warning for the same thing are one problem.
+                # Without this every outage arrives as two notifications.
+                - source_matchers:
+                    - severity = "critical"
+                  target_matchers:
+                    - severity = "warning"
+                  equal: ['namespace', 'alertname']
+              route:
+                group_by: ['alertname', 'namespace']
+                group_wait: 30s
+                group_interval: 5m
+                # The chart default is 12h. On a desktop that reads as the
+                # alert having gone away; 4h is often enough to still be nagged
+                # without being wallpaper.
+                repeat_interval: 4h
+                receiver: 'gnome'
+                routes:
+                  # Watchdog fires constantly by design — it is the dead-man's
+                  # switch proving the alert path works. Never notify on it.
+                  - receiver: 'null'
+                    matchers:
+                      - alertname = "Watchdog"
+              receivers:
+                - name: 'null'
+                - name: 'gnome'
+                  webhook_configs:
+                    - url: "{{ alert_notify_url }}"
+                      send_resolved: true
+                      # The desktop is asleep or rebooting a lot of the time.
+                      # Without this, every retry against a dead workstation
+                      # spams the Alertmanager log.
+                      max_alerts: 20
+              templates:
+                - '/etc/alertmanager/config/*.tmpl'
             ingress:
               enabled: true
               annotations:
@@ -42,6 +128,28 @@
             service:
               sessionAffinity: "ClientIP"
             alertmanagerSpec:
+              # A single replica means the thing that tells you a node died
+              # dies with it. Alertmanager gossips over the mesh on 9094 and
+              # dedupes notifications between peers, so two replicas send one
+              # notification, not two.
+              #
+              # Two, not three: with hard anti-affinity across three nodes, a
+              # third replica has nowhere to go when a node is lost and sits
+              # Pending. Two leaves a spare node for a graceful reschedule.
+              #
+              # Note what this does and does not buy. A StatefulSet pod on an
+              # unreachable node stays Terminating indefinitely — the
+              # guarantee of at-most-one pod per ordinal means Kubernetes will
+              # not recreate it while it cannot confirm the old one is gone.
+              # So a hard node failure leaves you at 1/2 until the node
+              # returns or the pod is force-deleted. The win is that the
+              # surviving replica keeps alerting; it is not self-healing.
+              replicas: 2
+              # hard, not the chart's default soft. Soft is a preference the
+              # scheduler may ignore, and both replicas landing on one node is
+              # exactly the failure this is meant to prevent.
+              podAntiAffinity: "hard"
+              podAntiAffinityTopologyKey: kubernetes.io/hostname
               storage:
                 volumeClaimTemplate:
                   spec:
@@ -99,12 +207,290 @@
                       action: replace
                       target_label: __metrics_path__
                       regex: (.+)
+                    # Single-quoted, not plain. A plain YAML scalar passes
+                    # `\\d` through as an escaped backslash followed by `d`,
+                    # which never matches, so the annotated port was ignored
+                    # and pod SD fell back to scraping every declared
+                    # containerPort — including ones serving no metrics.
                     - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
                       action: replace
-                      regex: ([^:]+)(?::\\d+)?;(\\d+)
+                      regex: '([^:]+)(?::\d+)?;(\d+)'
                       replacement: $1:$2
                       target_label: __address__
-                    - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+                    # Was __meta_kubernetes_service_annotation_*, which pod SD
+                    # never emits. Only role: service produces those.
+                    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
                       action: replace
                       target_label: __scheme__
                       regex: (https?)
+                    # Without these, annotation-discovered targets carry only
+                    # job and instance — no way to tell traefik from authelia
+                    # in a query or an alert.
+                    - source_labels: [__meta_kubernetes_namespace]
+                      action: replace
+                      target_label: namespace
+                    - source_labels: [__meta_kubernetes_pod_name]
+                      action: replace
+                      target_label: pod
+                    - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+                      action: replace
+                      target_label: app
+
+                # gluster-metrics-exporter runs on the storage nodes as a
+                # systemd service. Metric names are `glusterfs_`-prefixed;
+                # health is an enum, not a boolean:
+                # 0=not started, 1=down, 2=degraded, 3=partial, 4=up.
+                - job_name: 'gluster'
+                  scrape_interval: 60s
+                  static_configs: "{{ gluster_static_configs }}"
+
+    # ------------------------------------------------------------------
+    # UniFi / UDM Pro via unpoller.
+    #
+    # Same secret name and same keys as the unifi-dns secret 55 asserts in the
+    # external-dns namespace — it is literally the same console-scoped key.
+    # Secrets don't cross namespaces, so observability needs its own copy, but
+    # keeping the shape identical means it is a copy rather than a second
+    # thing to rotate differently.
+    # ------------------------------------------------------------------
+    - name: Look up the unifi-dns secret in external-dns
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: external-dns
+        name: unifi-dns
+      register: deploy_monitoring_unifi_secret
+      check_mode: false
+
+    - name: Assert the unifi-dns secret exists
+      ansible.builtin.assert:
+        that:
+          - deploy_monitoring_unifi_secret.resources | length > 0
+        fail_msg: >-
+          Secret unifi-dns is missing in namespace external-dns, so there is
+          nothing to copy into observability. Create the external-dns one
+          first — 55 asserts it too:
+            . bin/unifi-env
+            kubectl -n external-dns create secret generic unifi-dns \
+              --from-literal=UNIFI_HOST="https://${UNIFI_HOST}" \
+              --from-literal=UNIFI_API_KEY="${UNIFI_API_KEY}"
+        quiet: true
+
+    # This is a copy of a live secret, not a secret authored here. The rule
+    # against ansible creating secrets exists because writing one from a
+    # stored copy would silently clobber working credentials — there is no
+    # stored copy in this path, external-dns is the source of truth and
+    # rotating it there is enough.
+    - name: Mirror unifi-dns into observability
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: Secret
+        name: unifi-dns
+        namespace: observability
+        definition:
+          metadata:
+            annotations:
+              a8r.io/description: "Copy of external-dns/unifi-dns. Rotate there, re-run 57."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/cluster"
+          type: "{{ deploy_monitoring_unifi_secret.resources[0].type }}"
+          data: "{{ deploy_monitoring_unifi_secret.resources[0].data }}"
+      no_log: true
+
+    - name: Deploy unpoller
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: apps/v1
+        kind: Deployment
+        name: unpoller
+        namespace: observability
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: unpoller
+              app.kubernetes.io/part-of: observability
+            annotations:
+              a8r.io/description: "Exports UDM Pro, switch, AP and client metrics from the UniFi API."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/cluster"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: unpoller
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: unpoller
+                  app.kubernetes.io/part-of: observability
+                annotations:
+                  prometheus.io/scrape: "true"
+                  prometheus.io/port: "9130"
+                  prometheus.io/path: /metrics
+              spec:
+                imagePullSecrets:
+                  - name: regcred
+                containers:
+                  - name: unpoller
+                    # Pinned, like every other chart and image here.
+                    image: ghcr.io/unpoller/unpoller:v4.0.0
+                    imagePullPolicy: IfNotPresent
+                    ports:
+                      - name: metrics
+                        containerPort: 9130
+                        protocol: TCP
+                    env:
+                      # Mapped by key rather than envFrom, so the secret keeps
+                      # the same key names as the external-dns copy and stays a
+                      # straight `kubectl apply` away from it. unpoller reads
+                      # config from UP_-prefixed env; the secret does not.
+                      - name: UP_UNIFI_DEFAULT_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: unifi-dns
+                            key: UNIFI_HOST
+                      - name: UP_UNIFI_DEFAULT_API_KEY
+                        valueFrom:
+                          secretKeyRef:
+                            name: unifi-dns
+                            key: UNIFI_API_KEY
+                      # The UDM Pro serves its console on a self-signed cert.
+                      - name: UP_UNIFI_DEFAULT_VERIFY_SSL
+                        value: "false"
+                      - name: UP_UNIFI_DEFAULT_SITES_0
+                        value: "all"
+                      # No InfluxDB here; without this it retries a connection
+                      # to 127.0.0.1:8086 forever and buries the real logs.
+                      - name: UP_INFLUXDB_DISABLE
+                        value: "true"
+                      - name: UP_PROMETHEUS_HTTP_LISTEN
+                        value: "0.0.0.0:9130"
+                      # PII and IDS data are the high-cardinality, high-risk
+                      # collectors. Off deliberately — turn them on knowingly.
+                      - name: UP_UNIFI_DEFAULT_SAVE_IDS
+                        value: "false"
+                      - name: UP_UNIFI_DEFAULT_SAVE_DPI
+                        value: "false"
+                      # Per-interval logs, one line per device, are noise once
+                      # this is working.
+                      - name: UP_POLLER_QUIET
+                        value: "true"
+                    resources:
+                      requests:
+                        memory: 64Mi
+                        cpu: ".05"
+                      limits:
+                        memory: 256Mi
+                        cpu: ".25"
+
+    # ------------------------------------------------------------------
+    # Alerts for the targets added above. The kube-prometheus-stack
+    # defaultRules already cover Kubernetes itself; these cover the things
+    # that chart has never known about.
+    # ------------------------------------------------------------------
+    - name: Deploy the infrastructure PrometheusRule
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: monitoring.coreos.com/v1
+        kind: PrometheusRule
+        name: cluster-infrastructure
+        namespace: observability
+        # {% raw %} — the annotations below are Go templates evaluated by
+        # Alertmanager. Without this, Ansible tries to resolve $labels itself
+        # and the task fails on an undefined variable.
+        definition: |
+          {% raw %}
+          metadata:
+            labels:
+              release: kube-prometheus-stack
+            annotations:
+              a8r.io/description: "Alerts for Gluster and UniFi."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/cluster"
+          spec:
+            groups:
+              - name: gluster
+                rules:
+                  - alert: GlusterExporterDown
+                    expr: up{job="gluster"} == 0
+                    for: 10m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "gluster-metrics-exporter is down on {{ $labels.node }}"
+                      description: >-
+                        No Gluster metrics from this node. The volumes may be
+                        fine; this alert is about the exporter, not the data.
+
+                  # 4 is up. 3 is partial, 2 degraded, 1 down, 0 not started.
+                  - alert: GlusterVolumeDegraded
+                    expr: glusterfs_volume_health < 4
+                    for: 15m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Gluster volume {{ $labels.volume }} is not healthy"
+                      description: >-
+                        health={{ $value }} (4=up, 3=partial, 2=degraded,
+                        1=down, 0=not started). glass_cfg backs every PVC in
+                        the cluster, including Prometheus's own.
+
+                  - alert: GlusterBrickDown
+                    expr: glusterfs_brick_health < 4
+                    for: 15m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Gluster brick {{ $labels.brick_path }} is not up"
+                      description: >-
+                        glass_bulk is a plain distribute volume — a brick down
+                        there means those files are unreachable, not degraded.
+
+                  - alert: GlusterPeerDisconnected
+                    expr: glusterfs_peer_state == 0
+                    for: 10m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "Gluster peer {{ $labels.hostname }} is disconnected"
+                      description: "The trusted storage pool has lost a peer."
+
+                  - alert: GlusterVolumeNearFull
+                    expr: >-
+                      100 * glusterfs_volume_capacity_used_bytes
+                      / glusterfs_volume_capacity_bytes > 85
+                    for: 1h
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Gluster volume {{ $labels.volume }} is over 85% full"
+                      description: >-
+                        Currently {{ $value | printf "%.0f" }}%. The thin pool
+                        autoextend threshold is 70%, so this is well past it.
+
+              - name: unifi
+                rules:
+                  # Annotation-discovered pods land in the `kubernetes-pods`
+                  # job, so this selects on the app label rather than a job
+                  # name. absent() covers the pod disappearing entirely — a
+                  # missing series never trips `up == 0`.
+                  - alert: UnpollerDown
+                    expr: >-
+                      absent(up{job="kubernetes-pods", app="unpoller"})
+                      or max(up{job="kubernetes-pods", app="unpoller"}) == 0
+                    for: 15m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "unpoller is not being scraped"
+                      description: >-
+                        Either the pod is down or the UniFi API key has been
+                        rotated out from under it. The key is console-scoped
+                        and shared with external-dns — check unifi-dns too.
+          {% endraw %}
