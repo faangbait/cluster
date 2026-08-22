@@ -4,12 +4,703 @@
   become: false
   any_errors_fatal: true
   tasks:
-    - name: Deploy Traefik
-      ansible.builtin.import_role:
-        name: deploy-traefik
+    # TODO:
+    # kubectl create -n traefik secret generic aws-credentials --from-literal=AWS_REGION=us-east-1 --from-literal=AWS_ACCESS_KEY_ID=XXXXX --from-literal=AWS_SECRET_ACCESS_KEY=XXXXX
 
-# Then, in any order:
-#
-# kubectl apply -f _init/20-secrets.yaml (configmap)
-# kubectl -n traefik create secret docker-registry regcred ...
-# kubectl -n traefik create secret generic aws-credentials --from-literal=AWS_ACCESS_KEY_ID=... --from-literal=AWS_SECRET_ACCESS_KEY=... --from-literal=AWS_REGION=us-east-1
+    - name: Add Traefik Chart Repo
+      kubernetes.core.helm_repository:
+        name: traefik
+        repo_url: https://helm.traefik.io/traefik
+        # helm 4 errors on an existing repo instead of no-opping.
+        force_update: true
+
+    - name: Deploy Traefik 41.2.0
+      kubernetes.core.helm:
+        name: traefik
+        chart_ref: traefik/traefik
+        release_namespace: traefik
+        create_namespace: true
+        chart_version: "41.2.0"
+        values:
+          deployment:
+            replicas: 2
+            imagePullSecrets:
+              - name: regcred
+            initContainers:
+              - name: volume-permissions
+                image: busybox:1.36.1
+                command: ["sh", "-c", "touch /data/acme.json; chown 65532 /data/acme.json; chmod -v 600 /data/acme.json"]
+                securityContext:
+                  runAsNonRoot: false
+                  runAsGroup: 0
+                  runAsUser: 0
+                volumeMounts:
+                - mountPath: /data
+                  name: certs
+
+          volumes:
+            - name: traefik-configmap
+              mountPath: "/config"
+              type: configMap
+
+          log:
+            level: WARN
+
+          accessLog:
+            enabled: true
+            filePath: "/tmp/access.log"
+            bufferingSize: 100
+
+          global:
+            checkNewVersion: true
+
+          additionalArguments:
+            - "--providers.file.directory=/config"
+            # TODO: https://doc.traefik.io/traefik/providers/http/
+
+          envFrom:
+            - secretRef:
+                name: aws-credentials
+
+          # env:
+          # - name: LEGO_DISABLE_CNAME_SUPPORT
+          #   value: "true"
+
+          providers:
+            kubernetesCRD:
+              allowCrossNamespace: true
+
+          ports:
+            metrics:
+              port: 9999
+
+            web:
+              port: 8000
+              expose:
+                default: true
+              http:
+                redirections:
+                  entryPoint:
+                    to: websecure
+                    scheme: https
+
+            websecure:
+              port: 8443
+              expose:
+                default: true
+              http:
+                tls:
+                  enabled: true
+                  certResolver: "letsencrypt"
+                  options: "default"
+
+            dht-tcp:
+              port: 54321
+              expose:
+                default: true
+              protocol: TCP
+              http:
+                tls:
+                  enabled: true
+                  certResolver: "letsencrypt"
+                  options: ""
+
+            dht-udp: # TODO: Put this on the same port as tcp
+              port: 54322
+              expose:
+                default: true
+              protocol: UDP
+
+            minecraft:
+              port: 25565
+              expose:
+                default: true
+              protocol: TCP
+              http:
+                tls:
+                  enabled: true
+                  certResolver: "letsencrypt"
+
+          tlsOptions:
+            default:
+              sniStrict: true
+              preferServerCipherSuites: true
+              curvePreferences:
+                - CurveP521
+                - CurveP384
+              minVersion: VersionTLS12
+
+          service:
+            enabled: true
+            type: LoadBalancer
+            spec:
+              loadBalancerIP: "10.4.0.2"
+
+          persistence:
+            enabled: true
+            storageClass: "glass-cfg"
+            accessMode: "ReadWriteMany"
+            name: "certs"
+            path: "/data"
+
+          certificatesResolvers:
+            letsencrypt:
+              acme:
+                email: root@madeof.glass
+                dnsChallenge:
+                  provider: route53
+                  delayBeforeCheck: 60
+                  disablePropagationCheck: true
+                  resolvers:
+                    - 1.1.1.1
+                    - 46.227.67.134
+                    - 192.165.9.158
+                    - 8.8.8.8
+                    - 8.8.4.4
+                    - 9.9.9.9
+                storage: /data/acme.json
+
+          securityContext:
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+
+          podSecurityContext:
+            fsGroup: 65532
+            fsGroupChangePolicy: "OnRootMismatch"
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+
+    # Applied after the release because the helm chart creates the namespace. Pods
+    # stay pending until this lands, then recover on their own.
+    - name: Create the Traefik file-provider ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: traefik-configmap
+            namespace: traefik
+            labels:
+              app.kubernetes.io/name: traefik-configmap
+              app.kubernetes.io/part-of: traefik
+          data:
+            dynamic.yaml: ""
+            # dynamic.yaml: |
+            #   http:
+            #     services:
+            #       GitLab:
+            #         loadBalancer:
+            #           servers:
+            #             - url: "http://10.0.6.254"
+            #     routers:
+            #       GitLab:
+            #         entryPoints:
+            #           - websecure
+            #         service: GitLab
+            #         rule: Host(`git.lab.madeof.glass`)
+            #         tls:
+            #           certResolver: letsencrypt
+
+    # Split-horizon DNS. Two ExternalDNS instances over the same Traefik routes,
+    # told apart by --annotation-prefix: internal writes the Traefik VIP to UniFi
+    # static-DNS, public writes the WAN address to Route53. Traefik publishes
+    # nothing without them.
+    #
+    # Infrastructure, so not in 51-deploy-namespaces.yaml.
+    - name: Create the external-dns Namespace
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: Namespace
+        name: external-dns
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: external-dns
+            annotations:
+              a8r.io/description: "Split-horizon ExternalDNS: UniFi (internal) and Route53 (public)."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/cluster"
+
+    - name: Look up the unifi-dns secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: external-dns
+        name: unifi-dns
+      register: deploy_traefik_unifi_secret
+      check_mode: false
+
+    - name: Assert the unifi-dns secret exists
+      ansible.builtin.assert:
+        that:
+          - deploy_traefik_unifi_secret.resources | length > 0
+        fail_msg: >-
+          Secret unifi-dns is missing in namespace external-dns. The UniFi API key
+          is console-scoped and cannot be narrowed, so it is never stored here.
+          Create it from the gitignored .env:
+            . bin/unifi-env
+            kubectl -n external-dns create secret generic unifi-dns \
+              --from-literal=UNIFI_HOST="https://${UNIFI_HOST}" \
+              --from-literal=UNIFI_API_KEY="${UNIFI_API_KEY}"
+          Non-default site only: add --from-literal=UNIFI_SITE=<site uuid>.
+        quiet: true
+
+    - name: Look up the external-dns aws-credentials secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: external-dns
+        name: aws-credentials
+      register: deploy_traefik_edns_aws_secret
+      check_mode: false
+
+    - name: Assert the external-dns aws-credentials secret exists
+      ansible.builtin.assert:
+        that:
+          - deploy_traefik_edns_aws_secret.resources | length > 0
+        fail_msg: >-
+          Secret aws-credentials is missing in namespace external-dns. It is the
+          same scoped Route53 credential Traefik uses for ACME DNS-01, so copy it
+          rather than minting a second one:
+            kubectl -n traefik get secret aws-credentials -o yaml \
+              | grep -v '^\s*\(namespace\|uid\|resourceVersion\|creationTimestamp\|selfLink\):' \
+              | kubectl -n external-dns apply -f -
+        quiet: true
+
+    - name: Deploy ExternalDNS ServiceAccounts
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: ServiceAccount
+        name: "external-dns-{{ item }}"
+        namespace: external-dns
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "external-dns-{{ item }}"
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/owner: "@faangbait"
+      loop:
+        - internal
+        - public
+
+    # Read-only, and only over what --source=traefik-proxy and --source=ingress read.
+    - name: Deploy ExternalDNS ClusterRoles
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: "external-dns-{{ item }}"
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "external-dns-{{ item }}"
+              app.kubernetes.io/part-of: core
+          rules:
+            - apiGroups: ["networking.k8s.io"]
+              resources: ["ingresses"]
+              verbs: ["get", "list", "watch"]
+            # Only the v3 group. The legacy traefik.containo.us CRDs are not
+            # installed and --traefik-enable-legacy stays at its false default.
+            - apiGroups: ["traefik.io"]
+              resources: ["ingressroutes", "ingressroutetcps", "ingressrouteudps"]
+              verbs: ["get", "list", "watch"]
+            # Informer factories list namespaces at startup.
+            - apiGroups: [""]
+              resources: ["namespaces"]
+              verbs: ["get", "list", "watch"]
+      loop:
+        - internal
+        - public
+
+    - name: Deploy ExternalDNS ClusterRoleBindings
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: "external-dns-{{ item }}"
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "external-dns-{{ item }}"
+              app.kubernetes.io/part-of: core
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: "external-dns-{{ item }}"
+          subjects:
+            - kind: ServiceAccount
+              name: "external-dns-{{ item }}"
+              namespace: external-dns
+      loop:
+        - internal
+        - public
+
+    - name: Deploy ExternalDNS (internal view)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: apps/v1
+        kind: Deployment
+        name: external-dns-internal
+        namespace: external-dns
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: external-dns-internal
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Publishes the internal view of the cluster's tier names to UniFi."
+              a8r.io/owner: "@faangbait"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: external-dns-internal
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: external-dns-internal
+                  app.kubernetes.io/part-of: core
+              spec:
+                serviceAccountName: external-dns-internal
+                automountServiceAccountToken: true
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 65532
+                  runAsGroup: 65532
+                  fsGroup: 65532
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: external-dns
+                    image: registry.k8s.io/external-dns/external-dns:v0.22.0
+                    args:
+                      - --source=traefik-proxy
+                      - --source=ingress
+                      - --provider=webhook
+                      - --annotation-prefix=external-dns.internal/
+                      - --txt-owner-id=internal
+                      - --registry=txt
+                      - --txt-prefix=internal-
+                      # A record that stops being derivable is left in place
+                      # rather than deleted. Never set sync.
+                      - --policy=upsert-only
+                      # Authelia access_control.rules in 56-deploy-authentication.yaml
+                      # is the source of truth for this list. A tier missing here
+                      # fails silently. Filtering lives here, not on the webhook -
+                      # UniFi has no zone concept.
+                      - --domain-filter=mon.madeof.glass
+                      - --domain-filter=home.madeof.glass
+                      - --domain-filter=news.madeof.glass
+                      - --domain-filter=lab.madeof.glass
+                      - --domain-filter=vault.madeof.glass
+                      - --domain-filter=public.madeof.glass
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: ["ALL"]
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 64Mi
+                      limits:
+                        memory: 128Mi
+                  - name: unifi-webhook
+                    image: ghcr.io/home-operations/external-dns-unifi-webhook:0.10.11
+                    envFrom:
+                      - secretRef:
+                          name: unifi-dns
+                    env:
+                      # SERVER_HOST deliberately unset: the provider API binds
+                      # localhost:8888, reachable only by the controller in this pod.
+                      - name: LOG_LEVEL
+                        value: info
+                    ports:
+                      - name: http-health
+                        containerPort: 8080
+                        protocol: TCP
+                    livenessProbe:
+                      httpGet:
+                        path: /healthz
+                        port: http-health
+                      initialDelaySeconds: 10
+                      timeoutSeconds: 5
+                    readinessProbe:
+                      httpGet:
+                        path: /readyz
+                        port: http-health
+                      initialDelaySeconds: 10
+                      timeoutSeconds: 5
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: ["ALL"]
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 64Mi
+                      limits:
+                        memory: 128Mi
+
+    - name: Deploy ExternalDNS (public view)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: apps/v1
+        kind: Deployment
+        name: external-dns-public
+        namespace: external-dns
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: external-dns-public
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Publishes the public view of the cluster's tier names to Route53."
+              a8r.io/owner: "@faangbait"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: external-dns-public
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: external-dns-public
+                  app.kubernetes.io/part-of: core
+              spec:
+                serviceAccountName: external-dns-public
+                automountServiceAccountToken: true
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 65532
+                  runAsGroup: 65532
+                  fsGroup: 65532
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: external-dns
+                    image: registry.k8s.io/external-dns/external-dns:v0.22.0
+                    envFrom:
+                      - secretRef:
+                          name: aws-credentials
+                    args:
+                      - --source=traefik-proxy
+                      # --source=ingress deliberately absent, unlike the internal
+                      # instance. The kube-prometheus-stack Ingresses carry no
+                      # external-dns.public/target, so it would fall back to
+                      # status.loadBalancer and publish 10.4.0.2 into Route53 -
+                      # and upsert-only would never clean it up.
+                      - --provider=aws
+                      - --annotation-prefix=external-dns.public/
+                      - --txt-owner-id=public
+                      - --registry=txt
+                      - --txt-prefix=public-
+                      - --policy=upsert-only
+                      # The domain filters match no zone on their own - the zone is
+                      # madeof.glass, a parent of every one of them.
+                      - --aws-zone-match-parent
+                      # Covers the case match-parent doesn't: a private hosted zone
+                      # of the same name.
+                      - --aws-zone-type=public
+                      # The apex is deliberately unreachable: no entry below is a
+                      # suffix of madeof.glass itself, so MX, SPF and _dmarc stay
+                      # outside this instance's view.
+                      - --domain-filter=mon.madeof.glass
+                      - --domain-filter=home.madeof.glass
+                      - --domain-filter=news.madeof.glass
+                      - --domain-filter=lab.madeof.glass
+                      - --domain-filter=vault.madeof.glass
+                      - --domain-filter=public.madeof.glass
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: ["ALL"]
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 64Mi
+                      limits:
+                        memory: 128Mi
+
+    # Stamps the current WAN IP onto external-dns.public/target for routes that
+    # opted in with external-dns.public/publish: "true". This is what makes the
+    # public view self-healing on a WAN address change - it replaced rendering
+    # the address into manifests at deploy time.
+    - name: Deploy wan-target ServiceAccount
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: ServiceAccount
+        name: wan-target
+        namespace: kube-system
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: wan-target
+              app.kubernetes.io/part-of: external-dns
+
+    - name: Deploy wan-target ClusterRole
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: wan-target
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: wan-target
+              app.kubernetes.io/part-of: external-dns
+          rules:
+            - apiGroups: ["traefik.io", "traefik.containo.us"]
+              resources: ["ingressroutes", "ingressroutetcps", "ingressrouteudps"]
+              verbs: ["get", "list", "patch"]
+
+    - name: Deploy wan-target ClusterRoleBinding
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: wan-target
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: wan-target
+              app.kubernetes.io/part-of: external-dns
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: wan-target
+          subjects:
+            - kind: ServiceAccount
+              name: wan-target
+              namespace: kube-system
+
+    - name: Deploy wan-target CronJob
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: batch/v1
+        kind: CronJob
+        name: wan-target
+        namespace: kube-system
+        definition:
+          metadata:
+            labels:
+              app.kubernetes.io/name: wan-target
+              app.kubernetes.io/part-of: external-dns
+            annotations:
+              a8r.io/description: "Stamps the current WAN IP onto opted-in IngressRoutes for ExternalDNS"
+              a8r.io/owner: "@faangbait"
+          spec:
+            schedule: "*/5 * * * *"
+            concurrencyPolicy: Forbid
+            successfulJobsHistoryLimit: 1
+            failedJobsHistoryLimit: 3
+            startingDeadlineSeconds: 120
+            jobTemplate:
+              spec:
+                backoffLimit: 1
+                activeDeadlineSeconds: 120
+                template:
+                  metadata:
+                    labels:
+                      app.kubernetes.io/name: wan-target
+                      app.kubernetes.io/part-of: external-dns
+                  spec:
+                    serviceAccountName: wan-target
+                    restartPolicy: Never
+                    containers:
+                      - name: wan-target
+                        image: docker.io/alpine/k8s:1.31.4
+                        imagePullPolicy: IfNotPresent
+                        resources:
+                          requests:
+                            cpu: 10m
+                            memory: 32Mi
+                          limits:
+                            cpu: 200m
+                            memory: 64Mi
+                        command:
+                          - /bin/bash
+                          - -c
+                          # Curl/parse failure exits non-zero and writes nothing.
+                          # Already-correct targets are left alone.
+                          #
+                          # !unsafe because ${#targets[@]} contains "{#", which
+                          # Jinja parses as a comment-open.
+                          - !unsafe |
+                            set -euo pipefail
+
+                            WAN="$(curl -fsS --max-time 10 https://icanhazip.com | tr -d '[:space:]')"
+
+                            if [[ ! "$WAN" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+                              echo "refusing WAN address: ${WAN}" >&2
+                              exit 1
+                            fi
+
+                            IFS=. read -r o1 o2 o3 o4 <<<"$WAN"
+                            for o in "$o1" "$o2" "$o3" "$o4"; do
+                              if (( o < 0 || o > 255 )); then
+                                echo "refusing WAN octet: ${WAN}" >&2
+                                exit 1
+                              fi
+                            done
+                            if (( o1 == 0 || o1 == 10 || o1 == 127 || o1 >= 224 )) \
+                              || (( o1 == 169 && o2 == 254 )) \
+                              || (( o1 == 192 && o2 == 168 )) \
+                              || (( o1 == 172 && o2 >= 16 && o2 <= 31 )); then
+                              echo "refusing non-public WAN: ${WAN}" >&2
+                              exit 1
+                            fi
+
+                            echo "wan=${WAN}"
+
+                            mapfile -t targets < <(
+                              kubectl get ingressroute,ingressroutetcp,ingressrouteudp \
+                                --all-namespaces -o json \
+                              | jq -r --arg wan "$WAN" '
+                                  .items[]
+                                  | select(.metadata.annotations["external-dns.public/publish"] == "true")
+                                  | select((.metadata.annotations["external-dns.public/target"] // "") != $wan)
+                                  | [.kind, .metadata.namespace, .metadata.name]
+                                  | @tsv
+                                '
+                            )
+
+                            if (( ${#targets[@]} == 0 )); then
+                              echo "nothing to patch"
+                              exit 0
+                            fi
+
+                            for row in "${targets[@]}"; do
+                              kind="${row%%$'\t'*}"
+                              rest="${row#*$'\t'}"
+                              ns="${rest%%$'\t'*}"
+                              name="${rest#*$'\t'}"
+                              kind="${kind,,}"
+                              echo "annotate ${kind}/${ns}/${name} -> ${WAN}"
+                              kubectl annotate "$kind" -n "$ns" "$name" \
+                                "external-dns.public/target=${WAN}" --overwrite
+                            done

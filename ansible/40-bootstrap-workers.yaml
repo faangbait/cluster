@@ -16,7 +16,6 @@
     - name: Set facts
       ansible.builtin.set_fact:
         k8s_version: "{{ lookup('ansible.builtin.env', 'K8S_VERSION') | split('.') }}"
-        calico_version: v3.31.2
         localuser_account: "{{ lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT') }}"
         root_password: "{{ lookup('ansible.builtin.env', 'ROOT_PASSWORD') }}"
 

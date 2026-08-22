@@ -1,0 +1,62 @@
+- name: Deploy PostgreSQL
+  hosts: localhost
+  connection: local
+  become: false
+  any_errors_fatal: true
+  tasks:
+    # PostgreSQL tunables moved to README-gluster.md.
+    # Version upgrade is a runbook - see docs/runbooks/postgresql-major-upgrade.md.
+
+    - name: Look up the regcred pull secret in lab
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: lab
+        name: regcred
+      register: deploy_postgresql_regcred
+      # The assert below consumes this, so it must run under --check too.
+      check_mode: false
+
+    - name: Assert the regcred pull secret exists in lab
+      ansible.builtin.assert:
+        that:
+          - deploy_postgresql_regcred.resources | length > 0
+          - deploy_postgresql_regcred.resources[0].type == 'kubernetes.io/dockerconfigjson'
+        fail_msg: >-
+          Secret regcred is missing in namespace lab. It is the same clusterwide
+          credential asserted by 51-deploy-namespaces.yaml.
+        quiet: true
+
+    # No live release to read a version off, and none is guessed: for a database an
+    # unpinned chart is a major-version jump and a manual dump/restore.
+    - name: Assert the PostgreSQL chart version is pinned
+      ansible.builtin.assert:
+        that:
+          - deploy_postgresql_chart_version is defined
+          - deploy_postgresql_chart_version | length > 0
+        fail_msg: >-
+          deploy_postgresql_chart_version is not set. Pass
+          -e deploy_postgresql_chart_version=<x.y.z> and commit it into this playbook.
+        quiet: true
+
+    # OCI ref: the classic charts.bitnami.com index no longer serves the catalogue.
+    #
+    # CAVEAT for the day this is first wired up: the chart mints a random password
+    # into the `postgresql` secret when that secret is absent, and
+    # postgres-values.yaml does not set auth.existingSecret. Delete the secret and
+    # the next run mints a password the on-disk PGDATA will not accept.
+    - name: Deploy postgresql
+      kubernetes.core.helm:
+        name: postgresql
+        chart_ref: oci://registry-1.docker.io/bitnamicharts/postgresql
+        chart_version: "{{ deploy_postgresql_chart_version }}"
+        release_namespace: lab
+        values:
+          global:
+            imagePullSecrets:
+              - regcred
+            storageClass: glass-cfg
+            postgresql:
+              auth:
+                username: kube
+            resourcePreset: "small"

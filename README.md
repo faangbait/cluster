@@ -1,45 +1,92 @@
-# K8s Standup on Rocky 9.4
+# K8s on Rocky 9.8
 
-## Important
-This documentation assumes you've navigated to this directory in your file tree (`cat README.md` returns this doc). Run commands on all nodes unless prefixed with "[CP]" - these should run on a _single_ control-plane node.
+Bare-metal, heterogenous nodes, rootless containers — a first step toward
+NSA/CISA hardening guidance. Everything is declarative: nothing is typed into a
+terminal except what is in this README.
 
-## Design Goals
-The goal of this project is to bootstrap a high-availability Kubernetes multi-node and GlusterFS cluster in a challenging environment: bare metal, heterogenous nodes, rootless containers as a critical first step to meeting NSA/CISA guidance for hardened Kubernetes. The project uses declarative provisioning for all resources; nothing was typed in a terminal except what is provided in this README or provisioned using the subfolders.
+Run commands on all nodes unless prefixed with `[CP]`, which means one
+control-plane node.
 
 ---
-# Bare Metal Preparation
-## Configure a Static Route
-To enforce network sequestration, the chosen networking plugins operate entirely within L2. For this cluster to be routable externally, we opted to configure a static route from our top-of-rack router.
-```md
-Static Route: K8s
-Destination Network: 10.0.10.0/24
-Distance: 1
-Static Route Type: Interface
-Interface: Trusted LAN
+
+## Network
+
+MetalLB speaks BGP to the router (nodes AS 65001 ↔ router AS 65000) and
+advertises each service VIP as a `/32` into its own routed VLAN. There is no
+static route to maintain and no L2 announcement. Traefik's VIP is `10.4.0.2`.
+
+## Host playbooks
+
+Run in number order. `10` and `11` take a fresh box to a configured one; the
+rest build the cluster on top.
+
+- `10-provision-cluster.yaml` — provisions a fresh Rocky box
+- `11-configure-hosts.yaml` — host-specific variables
+- `20-bootstrap-gluster.yaml` — installs and configures GlusterFS
+- `30-bootstrap-control-plane.yaml` — Kubernetes on the control plane
+- `40-bootstrap-workers.yaml` — Kubernetes on the workers
+- `50-bootstrap-applications.yaml` — Calico, then a pass/fail networking test
+
+`60-upgrade-kubernetes.yaml` is separate and deliberate: minor versions cannot
+be skipped, so it finishes one minor on every node before starting the next. It
+refuses to run without an explicit confirmation that the cluster is backed up.
+
+## Cluster playbooks
+
+These used to be hand-run `kubectl apply -f _init` manifests. Every one is a
+playbook now. Run them in number order on a fresh cluster; each is non-breaking
+and safe to re-run.
+
+- `51-deploy-namespaces.yaml` — __Namespaces__: the namespaces we deploy applications into, plus the two things every one of them needs — an asserted `regcred` pull secret and the universal `lsio-conf` ConfigMap. We don't want to provision namespaces from inside a yaml file we'd later accidentally `kubectl delete`, so they're all here. Must run first. Infra namespaces (`traefik`, `metallb`, `cert-manager`, `external-dns`) are deliberately absent — they come from their own charts and we don't deploy apps into them.
+- `52-deploy-storage.yaml` — __Storage__: the `glass-bulk` and `glass-cfg` NFS provisioners. I'd have preferred Ceph, but hosting the storage cluster on the same bare metal as k8s means the container runtime requirements can and will conflict. You'll end up with a dead K8s or a dead Ceph sooner or later. [Gluster installation instructions](https://docs.rockylinux.org/guides/file_sharing/glusterfs/). Must run before anything that provisions a PVC.
+- `53-deploy-metallb.yaml` — __Load balancing__: MetalLB, its BGP peer and address pool, plus the node labels its speakers depend on.
+- `55-deploy-traefik.yaml` — __Ingress__: Traefik, the `traefik-configmap` its file provider reads, and the split-horizon DNS that makes its routes resolvable — two ExternalDNS instances (UniFi for the LAN view, Route53 for the public view) plus the `wan-target` CronJob that keeps the public target current. Needs `glass-cfg` from `52` for its `acme.json`.
+- `56-deploy-authentication.yaml` — __Authentication__: Authelia as a universal authentication layer, its Redis session store, and the Traefik middleware chain that fronts protected routes.
+- `57-deploy-monitoring.yaml` — __Observability__: kube-prometheus-stack.
+- `58-deploy-privateregistry.yaml` — __Registry__: the in-cluster image registry.
+- `59-deploy-postgresql.yaml` — __Database__: PostgreSQL. Major-version upgrades are a runbook, not a re-run — see [`docs/runbooks/postgresql-major-upgrade.md`](docs/runbooks/postgresql-major-upgrade.md).
+
+```shell
+cd ansible
+ansible-playbook -i inventory/hosts.yml 51-deploy-namespaces.yaml
 ```
 
-## Run Ansible Playbooks
+`51` and up assert that Traefik is deployed and fail with the exact command to
+run if it isn't. `55` is the one that has to come first.
 
-- See `ansible` folder
-- `10-provision-cluster.yaml` - Provisions a fresh Rocky 9.7 box 
-- `20-bootstrap-gluster.yaml` - Installs and configures glusterfs
-- `30-bootstrap-control-plane.yaml` - Installs Kubernetes on Control Plane
-- `40-bootstrap-workers.yaml` -  Installs Kubernetes on Workers
-- `50-bootstrap-applications.yaml` -  Installs necessary manifests (CNI, etc)
+## Conventions
 
-## Consider Installing Bootstraps Provided in _init Subfolder
-These are highly workflow-dependent, but this is what I use.
-- __Namespaces__: we don't want to provision these from inside a yaml file that we'd later accidentally `kubectl delete`, so I do them all at once here.
-- __Storage__: I'd have preferred to run Ceph, but since I'm hosting the storage cluster on the same bare metal machines as k8s, the container runtime requirements can and will conflict. You'll end up with a dead K8s or a dead Ceph sooner or later. [Gluster Installation Instructions](https://docs.rockylinux.org/guides/file_sharing/glusterfs/).
-- __Authentication__: I selected Authelia as a universal authentication layer.
-- __Config__: Universal ConfigMaps that should be applied to all namespaces.
+__Secrets are never created by ansible.__ `regcred`, `auth-redis`, the Traefik
+and ExternalDNS `aws-credentials`, and the ExternalDNS `unifi-dns` secret exist
+only in the live cluster — there is no stored copy, so writing one would
+silently replace working credentials. The playbooks look them up and fail with
+the exact `kubectl create secret ...` command when one is missing.
 
-```sh
-kubectl apply -f _init
+__ExternalDNS target annotations.__ IngressRoutes carry
+`external-dns.internal/target` (the Traefik VIP `10.4.0.2`, committed
+literally). The public target is the WAN IP, which does not belong in a public
+repo, so nothing sets it at deploy time — routes opt in with
+`external-dns.public/publish: "true"` and the `wan-target` CronJob stamps the
+current address every 5 minutes. Self-healing across a WAN address change, and
+no address in git.
+
+__Chart versions are pinned.__ Unpinned, any re-run would upgrade the thing it
+was only meant to reconcile. Bump deliberately.
+
+`_init/` is gone; every manifest that lived there is a playbook now.
+
+## Verify
+
+The networking test from `50` is a role, so it can be run on its own:
+
+```shell
+ansible-playbook -i inventory/hosts.yml 50-bootstrap-applications.yaml --tags networking-test
 ```
 
-## Verify Installation Success (You Hope)
-Should resolve: http://127.0.0.1:9000/dashboard/
-```sh
-kubectl port-forward $(kubectl get pods --selector "app.kubernetes.io/name=traefik" --output=name) 9000:9000
+Traefik's dashboard, at http://127.0.0.1:9000/dashboard/ :
+
+```shell
+kubectl port-forward -n traefik \
+  $(kubectl get pods -n traefik --selector "app.kubernetes.io/name=traefik" --output=name | head -1) \
+  9000:9000
 ```

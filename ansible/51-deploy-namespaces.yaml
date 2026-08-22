@@ -1,0 +1,108 @@
+- name: Deploy Namespaces
+  hosts: localhost
+  connection: local
+  become: false
+  any_errors_fatal: true
+  tasks:
+    # The namespaces we deploy applications into, plus the two things every one of
+    # them needs: an image-pull secret and the linuxserver.io PUID/PGID/TZ config.
+    - name: Set the application namespaces
+      ansible.builtin.set_fact:
+        cluster_namespaces:
+          - name: default
+            description: "Cluster default. Hand-run workloads land here."
+          - name: lab
+            description: "Contains all the moving parts of a CI/CD pipeline, plus a sandbox environment for app deployment."
+          - name: vault
+            description: "High-security environment; private access."
+          - name: home
+            description: "Workloads related to the real world."
+          - name: news
+            description: "Reads and posts to usenet, sorts content."
+          - name: public
+            description: "Public-facing applications and services."
+          - name: observability
+            description: "Monitoring and observability components."
+            repository: "https://github.com/faangbait/k8s-observability"
+
+    - name: Create the application namespaces
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item.name }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ item.name }}"
+            annotations:
+              a8r.io/description: "{{ item.description }}"
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "{{ item.repository | default('https://github.com/faangbait/antennae') }}"
+      loop: "{{ cluster_namespaces }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # regcred is never created here, only checked. The DockerHub credentials exist
+    # only in the live cluster - there is no copy in this repo - and
+    # `state: present` on a Secret is a full replace, so writing one would put every
+    # namespace that pulls a private image into ImagePullBackOff with no way back.
+    - name: Look up the regcred pull secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: "{{ item.name }}"
+        name: regcred
+      loop: "{{ cluster_namespaces }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: deploy_namespaces_regcred
+      # The assert below consumes this, so it must run under --check too.
+      check_mode: false
+
+    - name: Assert regcred exists in every application namespace
+      ansible.builtin.assert:
+        that:
+          - item.resources | length > 0
+          - item.resources[0].type == 'kubernetes.io/dockerconfigjson'
+        fail_msg: >-
+          Secret regcred is missing in namespace {{ item.item.name }}. Create it out
+          of band, then re-run:
+            kubectl -n {{ item.item.name }} create secret docker-registry regcred \
+              --docker-server=https://index.docker.io/v1/ \
+              --docker-username=... --docker-password=... --docker-email=...
+          Read an existing one back rather than guessing - they are the only copy:
+            kubectl -n default get secret regcred \
+              -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d
+        quiet: true
+      loop: "{{ deploy_namespaces_regcred.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    # ConfigMaps are namespaced and cannot be shared, so this is repeated per
+    # namespace rather than templated.
+    - name: Create the universal lsio-conf ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: lsio-conf
+            namespace: "{{ item.name }}"
+            labels:
+              app.kubernetes.io/name: lsio-conf
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Configures containers provided by linuxserver.io"
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          data:
+            PUID: "1000"
+            PGID: "1000"
+            TZ: "America/Chicago"
+      loop: "{{ cluster_namespaces }}"
+      loop_control:
+        label: "{{ item.name }}"

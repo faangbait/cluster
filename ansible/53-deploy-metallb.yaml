@@ -4,9 +4,99 @@
   become: false
   any_errors_fatal: true
   tasks:
-    - name: Deploy Metallb
-      ansible.builtin.import_role:
-        name: deploy-metallb
+    - name: Create MetalLB Namespace
+      kubernetes.core.k8s:
+        state: present
+        api_version: v1
+        kind: Namespace
+        name: metallb
+        definition:
+          metadata:
+            labels:
+              pod-security.kubernetes.io/enforce: privileged
+              pod-security.kubernetes.io/audit: privileged
+              pod-security.kubernetes.io/warn: privileged
+
+    - name: Add MetalLB Chart Repo
+      kubernetes.core.helm_repository:
+        name: metallb
+        repo_url: https://metallb.github.io/metallb
+        # helm 4 errors on an existing repo instead of no-opping.
+        force_update: true
+
+    # 0.16.1 defaults to frr-k8s. Pin native FRR — that is the backend the gate ran.
+    # This rolls the speaker DaemonSet. Do not run until 10.0.15.x LBs are gone.
+    - name: Deploy MetalLB 0.16.1
+      kubernetes.core.helm:
+        name: metallb
+        chart_ref: metallb/metallb
+        release_namespace: metallb
+        create_namespace: true
+        chart_version: "0.16.1"
+        values:
+          speaker:
+            frr:
+              enabled: true
+          frrk8s:
+            enabled: false
+
+    # BGP is the advertisement path. No L2Advertisement, no NIC list.
+    # Do not apply the three resources below while any Service still holds a
+    # 10.0.15.x LB IP.
+    - name: Deploy MetalLB BGPPeer
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: metallb.io/v1beta2
+        kind: BGPPeer
+        name: udm-pro
+        namespace: metallb
+        definition:
+          spec:
+            myASN: 65001
+            peerASN: 65000
+            peerAddress: 10.0.0.1
+            # Required: every node address carries noprefixroute (set by NetworkManager,
+            # not a NIC property), so zebra's connected nexthop is inactive and
+            # single-hop eBGP will not resolve 10.0.0.1.
+            ebgpMultiHop: true
+            # node4's bnx2x wedges with the link still up, so nothing tears the session
+            # down early — the UDM keeps forwarding into a dead next-hop for the whole
+            # hold time. Default is 90s. Hold time negotiates to the lower of the two
+            # ends, so setting it here alone is enough; the UDM needs no matching change.
+            #
+            # BFD would detect in <1s, but the UDM's FRR has no bfdd — `show bfd peers`
+            # returns "% Unknown command" — so timers are the only lever that works
+            # one-sided.
+            holdTime: 9s
+            keepaliveTime: 3s
+
+    - name: Deploy MetalLB IPAddressPool
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: metallb.io/v1beta1
+        kind: IPAddressPool
+        name: default
+        namespace: metallb
+        definition:
+          spec:
+            addresses:
+              - 10.4.0.0/22
+
+    - name: Deploy MetalLB BGPAdvertisement
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: metallb.io/v1beta1
+        kind: BGPAdvertisement
+        name: bgp
+        namespace: metallb
+        definition:
+          spec:
+            ipAddressPools:
+              - default
+            aggregationLength: 32
 
     # MetalLB will not advertise from a node carrying
     # exclude-from-external-load-balancers, so the labels have to be right

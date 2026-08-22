@@ -1,9 +1,0 @@
-global:
-  imagePullSecrets:
-    - regcred
-  storageClass: glass-cfg
-  postgresql:
-    auth:
-      username: kube
-  resourcePreset: "small"
-

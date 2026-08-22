@@ -1,0 +1,137 @@
+# Pod-to-pod routing, cluster DNS, service routing, and internet egress, tested
+# from one pod per node. Creates a throwaway namespace and always removes it.
+#
+# Callable from any playbook that has just changed something in the data path.
+# Skip with `--skip-tags networking-test`.
+- name: Set the temporary networking test namespace
+  ansible.builtin.set_fact:
+    networking_test_namespace: "networking-test-{{ ansible_facts['date_time']['epoch'] }}"
+  run_once: true
+  tags:
+    - networking-test
+
+- name: Confirm Networking (PASS/FAIL)
+  block:
+    - name: Wait for Calico to be available
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - rollout
+          - status
+          - daemonset/calico-node
+          - --namespace=calico-system
+          - --timeout=5m
+      changed_when: false
+
+    - name: Create one networking test pod per node
+      ansible.builtin.shell: |
+        set -o errexit -o nounset -o pipefail
+        kubectl create namespace {{ networking_test_namespace }}
+        kubectl apply --namespace {{ networking_test_namespace }} --filename - <<'EOF'
+        apiVersion: apps/v1
+        kind: DaemonSet
+        metadata:
+          name: networking-test
+        spec:
+          selector:
+            matchLabels:
+              app: networking-test
+          template:
+            metadata:
+              labels:
+                app: networking-test
+            spec:
+              tolerations:
+                - operator: Exists
+              containers:
+                - name: networking-test
+                  image: busybox:1.36
+                  command:
+                    - sh
+                    - -c
+                    - echo networking-ok > /tmp/index.html; httpd -f -p 8080 -h /tmp
+                  ports:
+                    - name: http
+                      containerPort: 8080
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: networking-test
+        spec:
+          selector:
+            app: networking-test
+          ports:
+            - name: http
+              port: 8080
+              targetPort: http
+        EOF
+      args:
+        executable: /bin/bash
+
+    - name: Wait for every networking test pod
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - rollout
+          - status
+          - daemonset/networking-test
+          - --namespace={{ networking_test_namespace }}
+          - --timeout=5m
+      changed_when: false
+
+    - name: Test pod routing, cluster DNS, services, and internet egress
+      ansible.builtin.shell: |
+        set -o errexit -o nounset -o pipefail
+
+        mapfile -t test_pods < <(
+          kubectl get pods --namespace {{ networking_test_namespace }} \
+            --selector app=networking-test \
+            --output jsonpath='{range .items[*]}{.metadata.name}{"|"}{.status.podIP}{"\n"}{end}'
+        )
+
+        test_pod_count=0
+        for unused_test_pod in "${test_pods[@]}"; do
+          ((test_pod_count += 1))
+        done
+
+        if [[ $test_pod_count -ne {{ groups['cluster'] | length }} ]]; then
+          echo "FAIL: expected {{ groups['cluster'] | length }} test pods, found $test_pod_count" >&2
+          exit 1
+        fi
+
+        for source in "${test_pods[@]}"; do
+          source_name="${source%%|*}"
+
+          for destination in "${test_pods[@]}"; do
+            destination_ip="${destination##*|}"
+            kubectl exec --namespace {{ networking_test_namespace }} "$source_name" -- \
+              ping -c 2 -W 3 "$destination_ip"
+          done
+
+          kubectl exec --namespace {{ networking_test_namespace }} "$source_name" -- \
+            wget -q -T 10 -O /dev/null \
+            networking-test.{{ networking_test_namespace }}.svc.cluster.local:8080
+
+          kubectl exec --namespace {{ networking_test_namespace }} "$source_name" -- \
+            ping -c 2 -W 3 1.1.1.1
+        done
+
+        echo "PASS: pod routing, cluster DNS, service routing, and internet egress are working"
+      args:
+        executable: /bin/bash
+      changed_when: false
+  always:
+    - name: Remove networking test resources
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - delete
+          - namespace
+          - "{{ networking_test_namespace }}"
+          - --ignore-not-found=true
+          - --wait=false
+      changed_when: true
+  run_once: true
+  tags:
+    - networking-test

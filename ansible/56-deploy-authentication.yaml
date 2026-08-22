@@ -1,0 +1,568 @@
+- name: Deploy Authentication
+  hosts: localhost
+  connection: local
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Look up the Traefik deployment
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: traefik
+        name: traefik
+      register: deploy_authentication_traefik
+      check_mode: false
+
+    - name: Assert Traefik is deployed
+      ansible.builtin.assert:
+        that:
+          - deploy_authentication_traefik.resources | length > 0
+        fail_msg: >-
+          Traefik is not deployed. This playbook applies Middlewares and an
+          IngressRoute, which need the traefik.io CRDs the chart installs. Run:
+            ansible-playbook -i inventory/hosts.yml 55-deploy-traefik.yaml
+        quiet: true
+
+    # auth-redis is never created here, only checked. A generated password would be
+    # a new password: the running release authenticates against the existing secret,
+    # so writing a fresh one locks Authelia out of its session store.
+    - name: Look up the auth-redis secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: vault
+        name: auth-redis
+      register: deploy_authentication_redis_secret
+      # The assert below consumes this, so it must run under --check too.
+      check_mode: false
+
+    - name: Assert the auth-redis secret exists
+      ansible.builtin.assert:
+        that:
+          - deploy_authentication_redis_secret.resources | length > 0
+          - deploy_authentication_redis_secret.resources[0].data['redis-password'] is defined
+        fail_msg: >-
+          Secret auth-redis is missing in namespace vault. Create it out of band,
+          then re-run:
+            kubectl -n vault create secret generic auth-redis \
+              --from-literal="redis-password=$(read -rsp 'Redis Password: ' REPLY; echo "$REPLY")"
+          Pick a fresh password only on a first install - otherwise it must match
+          the one the release was installed with.
+        quiet: true
+
+    # Authelia keeps its sessions here, so Redis has to exist before the manifest
+    # lands. The chart reads the password from the existing secret
+    # (auth.existingSecret), so a re-run rotates nothing.
+    - name: Deploy auth-redis 28.0.5
+      kubernetes.core.helm:
+        name: auth-redis
+        chart_ref: oci://registry-1.docker.io/bitnamicharts/redis
+        chart_version: "28.0.5"
+        release_namespace: vault
+        values:
+          global:
+            storageClass: glass-cfg
+            imagePullSecrets:
+              - regcred
+          image:
+            registry: docker.io
+            repository: bitnami/redis
+            tag: latest
+            digest: sha256:061a40d93f0deb5f390866b0800f96a58dea8adde319af872523f1038b4a3a2b
+          auth:
+            existingSecret: "auth-redis"
+            existingSecretPasswordKey: "redis-password"
+            usePasswordFiles: true
+          master:
+            persistence:
+              accessModes: ["ReadWriteMany"]
+          replica:
+            persistence:
+              accessModes: ["ReadWriteMany"]
+          sentinel:
+            enabled: true
+            image:
+              registry: docker.io
+              repository: bitnami/redis-sentinel
+              tag: latest
+              digest: sha256:227cd52aae97a987a5cee995027720dab7ba1f16c554340ad905b497dbe537d9
+            masterSet: authelia
+            persistence:
+              accessModes: ["ReadWriteMany"]
+          networkPolicy:
+            enabled: true
+            ingressNSPodMatchLabels:
+              app.kubernetes.io/name: authelia
+          metrics:
+            enabled: true
+            image:
+              registry: docker.io
+              repository: bitnami/redis-exporter
+              tag: latest
+              digest: sha256:fd5a0c9d1c7c316bd928d5837a54edc47176178023d6f976b83cd1341c4f8931
+          volumePermissions:
+            enabled: true
+            image:
+              registry: docker.io
+              repository: bitnami/os-shell
+              tag: latest
+              digest: sha256:475531b83cc9e79b0bacbb7b899f949e634490ec88267e6803184f8f2d54a549
+
+    - name: Deploy Authelia (ForwardAuth Middlewares)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: forwardauth-authelia
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Provides Traefik middleware for secure authentication."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            forwardAuth:
+              address: http://authelia.vault.svc.cluster.local/api/verify?rd=https://sso.vault.madeof.glass/
+              trustForwardHeader: true
+              maxResponseBodySize: 4096
+              authResponseHeaders:
+                - Remote-User
+                - Remote-Name
+                - Remote-Email
+                - Remote-Groups
+
+    - name: Deploy Authelia (Headers Middlewares)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: headers-authelia
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Provides Traefik middleware for secure authentication."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            headers:
+              browserXssFilter: true
+              customFrameOptionsValue: "SAMEORIGIN"
+              customResponseHeaders:
+                Cache-Control: "no-store"
+                Pragma: "no-cache"
+
+    # Default sourceCriterion keys on the connecting address, which is the real
+    # client here. An ipStrategy trusting X-Forwarded-For would be evadable.
+    - name: Deploy Traefik (RateLimit Middleware)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: ratelimit-default
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: traefik-defaults
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Per-client-IP request rate cap for published routes."
+              a8r.io/owner: "@faangbait"
+          spec:
+            rateLimit:
+              average: 100
+              burst: 200
+              period: 1s
+
+    - name: Deploy Traefik (Compress Middleware)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: compress-default
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: traefik-defaults
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Response compression for published routes."
+              a8r.io/owner: "@faangbait"
+          spec:
+            compress: {}
+
+    # Order matters. forwardauth short-circuits the 302 to Authelia and never
+    # calls what follows it, so anything listed after it misses that response.
+    - name: Deploy Authelia (ChainAuth Middlewares)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: chain-authelia-auth
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Provides Traefik middleware for secure authentication."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            chain:
+              middlewares:
+                - name: ratelimit-default
+                  namespace: vault
+                - name: compress-default
+                  namespace: vault
+                - name: headers-authelia
+                  namespace: vault
+                - name: forwardauth-authelia
+                  namespace: vault
+
+    - name: Deploy Authelia (Chain Middlewares)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: chain-authelia
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Provides Traefik middleware for secure authentication."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            chain:
+              middlewares:
+                - name: headers-authelia
+                  namespace: vault
+
+    - name: Deploy Authelia (ConfigMap)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: ConfigMap
+        name: auth-configmap
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: auth-configmap
+              app.kubernetes.io/part-of: core
+            annotations:
+              a8r.io/description: "Creates authelia config. File users live in Secret auth-users, not this ConfigMap."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          data:
+            # users.yml is Secret vault/auth-users — do not put credentials here.
+            # kubectl -n vault create secret generic auth-users --from-file=users.yml
+            configuration.yml: |
+              access_control:
+                default_policy: deny
+                rules:
+                - domain: '*.public.madeof.glass'
+                  policy: bypass
+                - domain: 'registry.lab.madeof.glass'
+                  policy: bypass
+                - domain: 'screen.news.madeof.glass'
+                  policy: bypass
+                - domain: 'sso.vault.madeof.glass'
+                  policy: bypass
+                - domain: '*.lab.madeof.glass'
+                  policy: one_factor
+                - domain: '*.mon.madeof.glass'
+                  policy: one_factor
+                - domain: '*.vault.madeof.glass'
+                  policy: one_factor
+                - domain: '*.news.madeof.glass'
+                  policy: one_factor
+                - domain: '*.home.madeof.glass'
+                  policy: one_factor
+
+              authentication_backend:
+                file:
+                  path: /configmap/users.yml
+              log:
+                level: info
+                keep_stdout: true
+                file_path: /config/authelia-log
+              notifier:
+                filesystem:
+                  filename: /config/notification-log
+                # smtp:
+              password_policy:
+                standard:
+                  enabled: true
+                  min_length: 4
+                  max_length: 0
+                  require_uppercase: false
+                  require_lowercase: false
+                  require_number: false
+                  require_special: false
+              regulation:
+                max_retries: 3
+                find_time: 1m
+                ban_time: 5m
+              server:
+                host: 0.0.0.0
+                port: 9091
+              session:
+                domain: madeof.glass
+                redis:
+                  host: auth-redis
+                  high_availability:
+                    sentinel_name: authelia
+              storage:
+                local:
+                  path: /app/db.sqlite3
+              telemetry:
+                metrics:
+                  enabled: true
+                  address: "tcp://0.0.0.0:9999"
+                  buffers:
+                    read: 4096
+                    write: 4096
+                  timeouts:
+                    read: 6s
+                    write: 6s
+                    idle: 30s
+              theme: auto
+              totp:
+                issuer: madeof.glass
+                period: 30
+                skew: 1
+              default_redirection_url: https://madeof.glass
+
+    - name: Deploy Authelia (PersistentVolumeClaim)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: authelia
+        namespace: vault
+        definition: |
+          spec:
+            storageClassName: "glass-cfg"
+            accessModes:
+              - ReadWriteMany
+            resources:
+              requests:
+                storage: 50Mi
+
+    - name: Deploy Authelia (Job)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: batch/v1
+        kind: Job
+        name: generate-auth-secrets
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: generate-auth-secrets
+              app.kubernetes.io/part-of: auth
+            annotations:
+              a8r.io/description: "Generates secrets once."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            template:
+              spec:
+                containers:
+                - name: generate-auth-secrets
+                  image: docker.io/alpine/openssl:latest
+                  command:
+                    - sh
+                    - -c
+                    - openssl rand -base64 128 > /config/AUTHELIA_JWT_SECRET; openssl rand -base64 128 > /config/AUTHELIA_SESSION_SECRET; openssl rand -base64 128 > /config/AUTHELIA_STORAGE_ENCRYPTION_KEY;
+                  resources:
+                    requests:
+                      memory: 128Mi
+                      cpu: ".5"
+                    limits:
+                      memory: 1Gi
+                      cpu: ".5"
+                  volumeMounts:
+                  - mountPath: /config
+                    name: cfg-auth
+                volumes:
+                  - name: cfg-auth
+                    persistentVolumeClaim:
+                      claimName: authelia
+                restartPolicy: OnFailure
+
+    - name: Deploy Authelia (Deployment)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: apps/v1
+        kind: Deployment
+        name: authelia
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: auth
+            annotations:
+              a8r.io/description: "Deploys Authelia into the Default namespace."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            replicas: 1
+            strategy:
+              type: Recreate
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: authelia
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: authelia
+                  app.kubernetes.io/part-of: auth
+              spec:
+                imagePullSecrets:
+                  - name: regcred
+                containers:
+                - name: authelia
+                  image: ghcr.io/authelia/authelia:4.37.5
+                  imagePullPolicy: IfNotPresent
+                  command: ["authelia", "--config=/configmap/configuration.yml"]
+                  env:
+                    - name: AUTHELIA_JWT_SECRET_FILE
+                      value: /config/AUTHELIA_JWT_SECRET
+                    - name: AUTHELIA_SESSION_SECRET_FILE
+                      value: /config/AUTHELIA_SESSION_SECRET
+                    - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
+                      value: /config/AUTHELIA_STORAGE_ENCRYPTION_KEY
+                    - name: AUTHELIA_SESSION_REDIS_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                          name: auth-redis
+                          key: redis-password
+                    - name: AUTHELIA_SESSION_REDIS_HIGH_AVAILABILITY_SENTINEL_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                          name: auth-redis
+                          key: redis-password
+                  ports:
+                  - name: http
+                    containerPort: 9091
+                    protocol: TCP
+                  volumeMounts:
+                  - mountPath: /config
+                    name: cfg-auth
+                  - mountPath: /configmap
+                    name: auth-config
+                  resources:
+                    requests:
+                      memory: 256Mi
+                      cpu: ".1"
+                    limits:
+                      memory: 512Mi
+                      cpu: ".25"
+                volumes:
+                  - name: cfg-auth
+                    persistentVolumeClaim:
+                      claimName: authelia
+                  - name: auth-config
+                    projected:
+                      sources:
+                        - configMap:
+                            name: auth-configmap
+                            items:
+                              - key: configuration.yml
+                                path: configuration.yml
+                        - secret:
+                            name: auth-users
+                            items:
+                              - key: users.yml
+                                path: users.yml
+
+    - name: Deploy Authelia (Service)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: Service
+        name: authelia
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: auth
+            annotations:
+              a8r.io/description: "Creates the Authelia service in the default namespace."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+          spec:
+            selector:
+              app.kubernetes.io/name: authelia
+            ports:
+              - name: http
+                protocol: TCP
+                port: 80
+                targetPort: http
+
+    - name: Deploy Authelia (IngressRoute)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: traefik.io/v1alpha1
+        kind: IngressRoute
+        name: authelia
+        namespace: vault
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: authelia
+              app.kubernetes.io/part-of: auth
+            annotations:
+              a8r.io/description: "Provides Traefik ingress for secure authentication."
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/antennae"
+              external-dns.internal/target: 10.4.0.2
+              external-dns.public/publish: "true"
+          spec:
+            entryPoints:
+              - websecure
+            routes:
+              - match: Host(`sso.vault.madeof.glass`)
+                kind: Rule
+                services:
+                  - kind: Service
+                    name: authelia
+                    port: 80
+                    namespace: vault
+                    passHostHeader: true
+                    strategy: wrr
+                    scheme: http
+                    responseForwarding:
+                      flushInterval: 100ms
+            tls:
+              certResolver: letsencrypt

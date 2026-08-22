@@ -164,3 +164,34 @@ echo "/dev/mapper/gluster5-brickvol /data/glusterfs/glass5 xfs rw,inode64,noatim
 sudo mount -a
 sudo mkdir -p /data/glusterfs/glass5/brick5
 ```
+
+---
+
+## PostgreSQL performance tunables on glass_cfg
+
+These headed the old `_init/70-postgresql.yaml`. They are host configuration
+applied on a gluster peer, not a Kubernetes install step, so they did not move
+into `ansible/roles/deploy-postgresql/`.
+
+PostgreSQL assumes that an `fsync` durably lands and that it is the only writer
+of its data directory. The gluster client's caching and read-ahead translators
+break both assumptions over an NFS/gluster mount, so they are turned off on the
+volume that backs application config, and O_DIRECT is made strict:
+
+```sh
+sudo gluster volume set glass_cfg performance.stat-prefetch off
+sudo gluster volume set glass_cfg performance.read-ahead off
+sudo gluster volume set glass_cfg performance.write-behind off
+sudo gluster volume set glass_cfg performance.readdir-ahead off
+sudo gluster volume set glass_cfg performance.io-cache off
+sudo gluster volume set glass_cfg performance.quick-read off
+sudo gluster volume set glass_cfg performance.open-behind off
+sudo gluster volume set glass_cfg performance.strict-o-direct on
+```
+
+These are volume-wide, so every PVC on `glass_cfg` pays the cost, not just
+PostgreSQL. That trade was made deliberately: `glass_cfg` holds config and
+databases, and `glass_bulk` holds the media that actually wants read-ahead.
+
+Candidate for a future gluster role - `20-bootstrap-gluster.yaml` already owns
+volume setup and these are ordinary `gluster volume set` calls.

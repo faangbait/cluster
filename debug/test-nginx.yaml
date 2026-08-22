@@ -43,6 +43,14 @@ kind: IngressRoute
 metadata:
   name: test-ingress
   namespace: default
+  annotations:
+    # Split-horizon, one annotation per ExternalDNS instance. The prefixes are
+    # the two --annotation-prefix values, not external-dns.alpha.kubernetes.io/.
+    # No annotation means no endpoint and no record.
+    external-dns.internal/target: 10.4.0.2
+    # Never set external-dns.public/target by hand - the wan-target CronJob
+    # stamps it from the live WAN address within 5 minutes of this being applied.
+    external-dns.public/publish: "true"
 spec:
   entryPoints:
     - websecure
