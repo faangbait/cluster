@@ -74,6 +74,51 @@
         name: nic-watchdog
         state: started
 
+- name: Disable X710 firmware LLDP
+  when: nic_driver | default('') == "i40e"
+  ansible.builtin.copy:
+    src: 90-i40e-disable-fw-lldp.rules
+    dest: /etc/udev/rules.d/90-i40e-disable-fw-lldp.rules
+    owner: root
+    group: root
+    mode: "0644"
+
+# CPU: conservative governor. Ramps under load, not pinned at turbo.
+# Do not use throughput-performance (min_perf_pct=100).
+- name: Install idle-ramp tuned profile
+  when: inventory_hostname not in ["localhost"]
+  block:
+    - name: Create idle-ramp profile dir
+      ansible.builtin.file:
+        path: /etc/tuned/idle-ramp
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install idle-ramp tuned.conf
+      ansible.builtin.copy:
+        src: idle-ramp-tuned.conf
+        dest: /etc/tuned/idle-ramp/tuned.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable tuned
+      ansible.builtin.systemd_service:
+        name: tuned
+        enabled: true
+        state: started
+
+    - name: Query active tuned profile
+      ansible.builtin.command: tuned-adm active
+      register: tuned_active
+      changed_when: false
+
+    - name: Select idle-ramp tuned profile
+      when: "'idle-ramp' not in tuned_active.stdout"
+      ansible.builtin.command: tuned-adm profile idle-ramp
+
 # Necessary for redis, which is used in our authentication app deployment.
 # If you're standing up a non-redis cluster and won't be deploying any of the apps provided in the subfolders, you can skip this.
 - name: Check status of thp
@@ -118,15 +163,6 @@
       [keyfile]
       unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan.calico;interface-name:vxlan-v6.calico;interface-name:wireguard.cali;interface-name:wg-v6.cali
     dest: /etc/NetworkManager/conf.d/calico.conf
-
-- name: Ignore unused host NICs in NetworkManager
-  when: unmanaged_nics | default([]) | length > 0
-  ansible.builtin.copy:
-    dest: /etc/NetworkManager/conf.d/99-unmanaged-unused.conf
-    content: |
-      [keyfile]
-      unmanaged-devices={{ unmanaged_nics | map("regex_replace", "^(.*)$", "interface-name:\\1") | join(";") }}
-
 
 - name: Update all packages
   ansible.builtin.dnf:
@@ -207,6 +243,9 @@
     - "7946/tcp"
     - "7946/udp"
     - "8123/tcp"
+    # hassio hostNetwork Govee LAN API listen port. Devices unicast
+    # replies here; conntrack does not match them to the 4001 scan.
+    - "4002/udp"
     # node_exporter. kube-prometheus-stack deploys the DaemonSet with
     # hostNetwork, so Prometheus scrapes the node address directly and this
     # has to be open. It wasn't, so every host metric silently failed with

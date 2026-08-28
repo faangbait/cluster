@@ -1,0 +1,3 @@
+# Intel X710 firmware LLDP agent eats LLDPDUs and can confuse UniFi.
+# ethtool priv-flag is not always NVM-persistent; re-apply on device add.
+ACTION=="add", SUBSYSTEM=="net", DRIVERS=="i40e", RUN+="/usr/sbin/ethtool --set-priv-flags %k disable-fw-lldp on"
