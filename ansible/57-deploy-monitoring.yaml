@@ -103,6 +103,13 @@
                   - receiver: 'null'
                     matchers:
                       - alertname = "Watchdog"
+                  # info is noise on a desktop notifier; only warning+ should wake it.
+                  - receiver: 'null'
+                    matchers:
+                      - severity = "info"
+                  - receiver: 'null'
+                    matchers:
+                      - alertname = "InfoInhibitor"
               receivers:
                 - name: 'null'
                 - name: 'gnome'
@@ -441,8 +448,11 @@
                         1=down, 0=not started). glass_cfg backs every PVC in
                         the cluster, including Prometheus's own.
 
+                  # Unlike glusterfs_volume_health, the exporter emits this as
+                  # binary 0/1, not the 0-4 volume scale. `< 4` was always
+                  # true on a healthy brick and fired permanently.
                   - alert: GlusterBrickDown
-                    expr: glusterfs_brick_health < 4
+                    expr: glusterfs_brick_health == 0
                     for: 15m
                     labels:
                       severity: warning

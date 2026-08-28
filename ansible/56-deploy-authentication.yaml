@@ -235,28 +235,37 @@
                 - name: forwardauth-authelia
                   namespace: vault
 
-    - name: Deploy Authelia (Chain Middlewares)
+    # Headers only — no Authelia forward-auth. Named separately from
+    # chain-authelia-auth so unauthenticated routes are not mislabeled.
+    - name: Deploy Traefik (Security Chain Middleware)
       kubernetes.core.k8s:
         state: present
         apply: true
         api_version: traefik.io/v1alpha1
         kind: Middleware
-        name: chain-authelia
+        name: chain-security
         namespace: vault
         definition: |
           metadata:
             labels:
-              app.kubernetes.io/name: authelia
+              app.kubernetes.io/name: traefik-defaults
               app.kubernetes.io/part-of: core
             annotations:
-              a8r.io/description: "Provides Traefik middleware for secure authentication."
+              a8r.io/description: "Security headers (no forward-auth) for published routes."
               a8r.io/owner: "@faangbait"
-              a8r.io/repository: "https://github.com/faangbait/antennae"
           spec:
             chain:
               middlewares:
                 - name: headers-authelia
                   namespace: vault
+
+    - name: Remove deprecated chain-authelia middleware
+      kubernetes.core.k8s:
+        state: absent
+        api_version: traefik.io/v1alpha1
+        kind: Middleware
+        name: chain-authelia
+        namespace: vault
 
     - name: Deploy Authelia (ConfigMap)
       kubernetes.core.k8s:
