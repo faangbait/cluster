@@ -624,7 +624,7 @@
             schedule: "*/5 * * * *"
             concurrencyPolicy: Forbid
             successfulJobsHistoryLimit: 1
-            failedJobsHistoryLimit: 3
+            failedJobsHistoryLimit: 0
             startingDeadlineSeconds: 120
             jobTemplate:
               spec:
