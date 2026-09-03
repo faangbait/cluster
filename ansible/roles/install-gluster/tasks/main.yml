@@ -39,6 +39,30 @@
     dest: /etc/ganesha/ganesha.conf
     mode: '0644'
 
+- name: Ensure the nfs-ganesha systemd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/nfs-ganesha.service.d
+    state: directory
+    mode: '0755'
+  tags:
+    - ganesha-hardening
+
+- name: Restart nfs-ganesha automatically on failure
+  ansible.builtin.copy:
+    src: templates/nfs-ganesha-restart.conf
+    dest: /etc/systemd/system/nfs-ganesha.service.d/restart.conf
+    mode: '0644'
+  register: ganesha_restart_dropin
+  tags:
+    - ganesha-hardening
+
+- name: Reload systemd after changing the nfs-ganesha unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: ganesha_restart_dropin is changed
+  tags:
+    - ganesha-hardening
+
 - name: Configure Firewall
   ansible.posix.firewalld:
     state: enabled

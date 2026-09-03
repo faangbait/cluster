@@ -518,6 +518,13 @@
               enabled: true
             thanosServiceMonitor:
               enabled: true
+              # Without this the sidecar target inherits job=kube-prometheus-stack-thanos-discovery
+              # from the Service name. Pin it so sidecar series are addressable
+              # as job="thanos-sidecar" alongside the query/store/compact jobs.
+              relabelings:
+                - action: replace
+                  targetLabel: job
+                  replacement: thanos-sidecar
             ingress:
               enabled: true
               annotations:
