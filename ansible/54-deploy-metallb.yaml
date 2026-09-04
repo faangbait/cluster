@@ -25,7 +25,6 @@
         force_update: true
 
     # 0.16.1 defaults to frr-k8s. Pin native FRR — that is the backend the gate ran.
-    # This rolls the speaker DaemonSet. Do not run until 10.0.15.x LBs are gone.
     - name: Deploy MetalLB 0.16.1
       kubernetes.core.helm:
         name: metallb
@@ -66,8 +65,6 @@
                 release: kube-prometheus-stack
 
     # BGP is the advertisement path. No L2Advertisement, no NIC list.
-    # Do not apply the three resources below while any Service still holds a
-    # 10.0.15.x LB IP.
     - name: Deploy MetalLB BGPPeer
       kubernetes.core.k8s:
         state: present

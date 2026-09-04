@@ -23,6 +23,17 @@
     gpgcheck: true
     enabled: true
 
+# cri-o tracks the Kubernetes minor version 1:1. Left behind here, it drifts
+# further from kubelet with every completed run of this playbook.
+- name: Point the cri-o repository at v{{ kubernetes_upgrade_minor }}
+  ansible.builtin.yum_repository:
+    name: cri-o
+    description: "CRI-O v{{ kubernetes_upgrade_minor }} YUM Repo"
+    baseurl: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ kubernetes_upgrade_minor }}/rpm/"
+    gpgkey: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ kubernetes_upgrade_minor }}/rpm/repodata/repomd.xml.key"
+    gpgcheck: true
+    enabled: true
+
 - name: Unlock kubeadm
   community.general.yum_versionlock:
     name: kubeadm
@@ -74,6 +85,18 @@
       ansible.builtin.fail:
         msg: The drain failed; {{ inventory_hostname }} was uncordoned again.
 
+- name: Unlock cri-o
+  community.general.yum_versionlock:
+    name: cri-o
+    state: absent
+
+- name: Upgrade cri-o to v{{ kubernetes_upgrade_minor }}
+  ansible.builtin.dnf:
+    name: "cri-o-{{ kubernetes_upgrade_minor }}.*"
+    state: latest
+    disable_excludes: cri-o
+  notify: Restart crio
+
 - name: Unlock kubelet and kubectl
   community.general.yum_versionlock:
     name:
@@ -90,8 +113,18 @@
     disable_excludes: kubernetes
   notify: Restart kubelet
 
-- name: Apply the kubelet restart now
+- name: Apply the crio and kubelet restarts now
   ansible.builtin.meta: flush_handlers
+
+- name: Read the upgraded cri-o version
+  ansible.builtin.command: crio --version
+  register: installed_crio_version
+  changed_when: false
+
+- name: Verify the cri-o minor version
+  ansible.builtin.assert:
+    that: installed_crio_version.stdout is search('crio version ' + kubernetes_upgrade_minor + '\\.')
+    fail_msg: "Expected cri-o v{{ kubernetes_upgrade_minor }}.x, got {{ installed_crio_version.stdout }}"
 
 - name: Read the upgraded kubelet version
   ansible.builtin.command: kubelet --version
@@ -106,6 +139,7 @@
 - name: Lock Kubernetes packages
   community.general.yum_versionlock:
     name:
+      - cri-o
       - kubeadm
       - kubectl
       - kubelet

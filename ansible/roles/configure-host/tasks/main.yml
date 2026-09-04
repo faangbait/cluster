@@ -252,3 +252,10 @@
     # "no route to host" from the day the stack was deployed — the exporters
     # were listening the whole time.
     - "9100/tcp"
+    # metallb-speaker and its frr-metrics sidecar. Same shape as
+    # node_exporter above — hostNetwork DaemonSet, scraped by node address —
+    # and the same bug: unopened, so every metallb TargetDown alert fires
+    # from every node, including a node scraping its own speaker (pod
+    # traffic still crosses the real NIC's firewalld zone, not loopback).
+    - "9120/tcp"
+    - "9121/tcp"

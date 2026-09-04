@@ -3,19 +3,22 @@
   become: true
   any_errors_fatal: true
   tasks:
-    # - name: Assert ENV Variables exist
-    #   ansible.builtin.assert:
-    #     that:
-    #       - lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT')
-    #     fail_msg: "Some required variables are not defined."
-    #     success_msg: "All required variables are defined"
+    - name: Assert ENV Variables exist
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'K8S_VERSION') | length > 0
+        fail_msg: "Some required variables are not defined."
+        success_msg: "All required variables are defined"
 
     - name: Set facts
       ansible.builtin.set_fact:
+        k8s_version: "{{ lookup('ansible.builtin.env', 'K8S_VERSION') | split('.') }}"
         localuser_account: "{{ lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT') }}"
 
     - name: Set derived facts
       ansible.builtin.set_fact:
+        k8s_minor: "{{ k8s_version[0] }}.{{ k8s_version[1] }}"
+        k8s_patch: "{{ k8s_version[0] }}.{{ k8s_version[1] }}.{{ k8s_version[2] }}"
         localuser_home: "/home/{{ localuser_account }}"
 
     - name: Configure Bare Metal Host

@@ -21,7 +21,7 @@
 #   recover-nic --dry-run
 #
 # Watchdog (systemd):
-#   recover-nic --watch --driver bnx2x
+#   recover-nic --watch --driver i40e
 #
 # Triggers are kernel signatures for this driver, not generic
 # connectivity loss. Does not loop unload.
@@ -121,7 +121,7 @@ has_carrier() {
 
 known_loaded_drivers() {
   local d
-  for d in ixgbe be2net bnx2x i40e; do
+  for d in ixgbe be2net i40e; do
     [[ -d /sys/module/$d ]] || continue
     printf '%s\n' "$d"
   done
@@ -138,7 +138,7 @@ resolve_driver() {
     if ((${#ds[@]} == 1)); then
       DRIVER=${ds[0]}
     else
-      die "pass --driver (ixgbe | be2net | bnx2x | i40e); loaded: ${ds[*]:-none}"
+      die "pass --driver (ixgbe | be2net | i40e); loaded: ${ds[*]:-none}"
     fi
   fi
   [[ $DRIVER =~ ^[a-zA-Z0-9_]+$ ]] || die "bad driver name: $DRIVER"

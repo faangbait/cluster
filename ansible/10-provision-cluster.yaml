@@ -9,7 +9,7 @@
     - name: Assert ENV Variables exist
       ansible.builtin.assert:
         that:
-          - lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT')
+          - lookup('ansible.builtin.env', 'LOCALUSER_ACCOUNT') | length > 0
         fail_msg: "Some required variables are not defined."
         success_msg: "All required variables are defined"
 

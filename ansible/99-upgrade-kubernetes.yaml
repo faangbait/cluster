@@ -60,6 +60,12 @@
     kubernetes_node_ready_timeout: 10m
     kubernetes_delete_emptydir_data: false
   handlers: &upgrade_handlers
+    - name: Restart crio
+      ansible.builtin.systemd_service:
+        name: crio
+        state: restarted
+        daemon_reload: true
+
     - name: Restart kubelet
       ansible.builtin.systemd_service:
         name: kubelet

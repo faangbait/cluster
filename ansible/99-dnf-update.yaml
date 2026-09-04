@@ -1,17 +1,19 @@
 # ansible-playbook 99-dnf-update.yaml -i inventory
 # prepare to be rebooted
----
 - name: Update servers
-  hosts: all
+  hosts: cluster
   serial: 1
   become: true
+  any_errors_fatal: true
 
   tasks:
-  - name: dnf update
-    dnf:
-      name: "*"
-      state: latest
-    
-  - name: reboot
-    reboot:
-      reboot_timeout: 3600
+    - name: dnf update
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+      register: dnf_update
+
+    - name: reboot
+      ansible.builtin.reboot:
+        reboot_timeout: 3600
+      when: dnf_update.changed
