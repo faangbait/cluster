@@ -125,6 +125,86 @@
               requests:
                 storage: 50Mi
 
+    # AUTHELIA_USERS is never generated here, only read back. It's a users.yml
+    # database placed on the PVC out of band; this doesn't create it, it just
+    # gets its contents into a fact for a later task to turn into the auth-users
+    # Secret the Deployment below expects.
+    - name: Read AUTHELIA_USERS off the Authelia PVC
+      block:
+        - name: Start a temporary pod to read the Authelia PVC
+          kubernetes.core.k8s:
+            state: present
+            apply: true
+            api_version: v1
+            kind: Pod
+            name: deploy-authentication-read-users
+            namespace: vault
+            wait: true
+            wait_condition:
+              type: Ready
+              status: "True"
+            wait_timeout: 60
+            definition:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: deploy-authentication-read-users
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: reader
+                    image: docker.io/alpine/openssl:latest
+                    command: ["sleep", "300"]
+                    volumeMounts:
+                      - mountPath: /config
+                        name: cfg-auth
+                        readOnly: true
+                volumes:
+                  - name: cfg-auth
+                    persistentVolumeClaim:
+                      claimName: authelia
+
+        - name: Cat AUTHELIA_USERS out of the pod
+          kubernetes.core.k8s_exec:
+            namespace: vault
+            pod: deploy-authentication-read-users
+            command: cat /config/AUTHELIA_USERS
+          register: deploy_authentication_users_result
+          no_log: true
+
+        - name: Assert AUTHELIA_USERS was found
+          ansible.builtin.assert:
+            that:
+              - deploy_authentication_users_result.rc == 0
+              - deploy_authentication_users_result.stdout | length > 0
+            fail_msg: >-
+              AUTHELIA_USERS is missing or empty on the authelia PVC in namespace
+              vault. Place it out of band, then re-run this playbook.
+            quiet: true
+
+      always:
+        - name: Delete the temporary reader pod
+          kubernetes.core.k8s:
+            state: absent
+            api_version: v1
+            kind: Pod
+            name: deploy-authentication-read-users
+            namespace: vault
+
+    # Hashing happens entirely on the controller (filter_plugins/argon2_hash.py,
+    # via argon2-cffi) so plaintext passwords never cross the wire to a pod.
+    - name: Deploy the auth-users Secret
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: Secret
+        name: auth-users
+        namespace: vault
+        definition:
+          stringData:
+            users.yml: "{{ deploy_authentication_users_result.stdout | hash_authelia_users }}"
+      no_log: true
+
     - name: Deploy Authelia (Job)
       kubernetes.core.k8s:
         state: present
