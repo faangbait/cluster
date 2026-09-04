@@ -39,6 +39,31 @@
               enabled: true
           frrk8s:
             enabled: false
+          # Metrics are always HTTPS behind kube-rbac-proxy on :9120,
+          # authenticated by the scraper's own pod token (rbacPrometheus,
+          # on by default in this chart) — hence the explicit
+          # serviceAccount/namespace rather than just a port and a path.
+          prometheus:
+            serviceMonitor:
+              enabled: true
+              speaker:
+                # serviceMonitorSelectorNilUsesHelmValues only matches this
+                # label — same as Thanos's ServiceMonitor in 52.
+                additionalLabels:
+                  release: kube-prometheus-stack
+              controller:
+                additionalLabels:
+                  release: kube-prometheus-stack
+            serviceAccount: kube-prometheus-stack-prometheus
+            namespace: observability
+            # MetalLBBGPSessionDown, MetalLBAddressPoolExhausted/Usage,
+            # MetalLBConfigNotLoaded, MetalLBStaleConfig — MetalLB computes
+            # these from its own metrics, cheaper and more correct than
+            # hand-rolling the same PromQL ourselves.
+            prometheusRule:
+              enabled: true
+              additionalLabels:
+                release: kube-prometheus-stack
 
     # BGP is the advertisement path. No L2Advertisement, no NIC list.
     # Do not apply the three resources below while any Service still holds a

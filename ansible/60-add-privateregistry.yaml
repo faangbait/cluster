@@ -1,4 +1,4 @@
-- name: Deploy Private Registry
+- name: Add Private Registry
   hosts: localhost
   connection: local
   become: false
@@ -10,13 +10,13 @@
         kind: Deployment
         namespace: traefik
         name: traefik
-      register: deploy_privateregistry_traefik
+      register: add_privateregistry_traefik
       check_mode: false
 
     - name: Assert Traefik is deployed
       ansible.builtin.assert:
         that:
-          - deploy_privateregistry_traefik.resources | length > 0
+          - add_privateregistry_traefik.resources | length > 0
         fail_msg: >-
           Traefik is not deployed. This playbook applies Middlewares and an
           IngressRoute, which need the traefik.io CRDs the chart installs. Run:

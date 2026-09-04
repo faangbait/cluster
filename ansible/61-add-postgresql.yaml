@@ -1,4 +1,4 @@
-- name: Deploy PostgreSQL
+- name: Add PostgreSQL
   hosts: localhost
   connection: local
   become: false
@@ -13,18 +13,18 @@
         kind: Secret
         namespace: lab
         name: regcred
-      register: deploy_postgresql_regcred
+      register: add_postgresql_regcred
       # The assert below consumes this, so it must run under --check too.
       check_mode: false
 
     - name: Assert the regcred pull secret exists in lab
       ansible.builtin.assert:
         that:
-          - deploy_postgresql_regcred.resources | length > 0
-          - deploy_postgresql_regcred.resources[0].type == 'kubernetes.io/dockerconfigjson'
+          - add_postgresql_regcred.resources | length > 0
+          - add_postgresql_regcred.resources[0].type == 'kubernetes.io/dockerconfigjson'
         fail_msg: >-
           Secret regcred is missing in namespace lab. It is the same clusterwide
-          credential asserted by 51-deploy-namespaces.yaml.
+          credential asserted by 50-configure-cluster.yaml.
         quiet: true
 
     # No live release to read a version off, and none is guessed: for a database an
@@ -32,11 +32,11 @@
     - name: Assert the PostgreSQL chart version is pinned
       ansible.builtin.assert:
         that:
-          - deploy_postgresql_chart_version is defined
-          - deploy_postgresql_chart_version | length > 0
+          - add_postgresql_chart_version is defined
+          - add_postgresql_chart_version | length > 0
         fail_msg: >-
-          deploy_postgresql_chart_version is not set. Pass
-          -e deploy_postgresql_chart_version=<x.y.z> and commit it into this playbook.
+          add_postgresql_chart_version is not set. Pass
+          -e add_postgresql_chart_version=<x.y.z> and commit it into this playbook.
         quiet: true
 
     # OCI ref: the classic charts.bitnami.com index no longer serves the catalogue.
@@ -49,7 +49,7 @@
       kubernetes.core.helm:
         name: postgresql
         chart_ref: oci://registry-1.docker.io/bitnamicharts/postgresql
-        chart_version: "{{ deploy_postgresql_chart_version }}"
+        chart_version: "{{ add_postgresql_chart_version }}"
         release_namespace: lab
         values:
           global:
@@ -60,3 +60,13 @@
               auth:
                 username: kube
             resourcePreset: "small"
+          # serviceMonitorSelectorNilUsesHelmValues is on (chart default) —
+          # same label as every other ServiceMonitor/ScrapeConfig in this
+          # cluster, without it kube-prometheus-stack's Prometheus never
+          # selects it.
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+              labels:
+                release: kube-prometheus-stack

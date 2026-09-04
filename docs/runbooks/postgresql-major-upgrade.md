@@ -52,7 +52,7 @@ helm upgrade postgresql bitnami/postgresql -n lab -f /tmp/postgres-values.yaml
 ```
 
 There is no checked-in values file to point at — the values are inlined in
-`ansible/59-deploy-postgresql.yaml`. Reading them back off the live release is
+`ansible/61-add-postgresql.yaml`. Reading them back off the live release is
 what you want here anyway: this upgrade must not also apply unrelated drift
 between the playbook and what is actually running.
 
@@ -85,4 +85,4 @@ no return.
 ## Related
 
 - Gluster `glass_cfg` performance tunables PostgreSQL depends on: `README-gluster.md`
-- Playbook and values: `ansible/59-deploy-postgresql.yaml`
+- Playbook and values: `ansible/61-add-postgresql.yaml`

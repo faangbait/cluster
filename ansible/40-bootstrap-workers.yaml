@@ -53,4 +53,4 @@
             kubeadm version -oyaml
 
   
-  # when complete, move to 50-bootstrap-applications
+  # when complete, move to 50-configure-cluster

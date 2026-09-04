@@ -72,7 +72,8 @@
 
           # No metrics Service or ServiceMonitor: the pods already carry
           # prometheus.io/{scrape,port,path} and the `kubernetes-pods` job in
-          # 57 discovers them by annotation.
+          # 52 discovers them by annotation. addRoutersLabels is what makes
+          # the router-level metrics distinguishable at all — off by default.
           metrics:
             prometheus:
               addRoutersLabels: true
@@ -217,7 +218,7 @@
     # static-DNS, public writes the WAN address to Route53. Traefik publishes
     # nothing without them.
     #
-    # Infrastructure, so not in 51-deploy-namespaces.yaml.
+    # Infrastructure, so not in 50-configure-cluster.yaml.
     - name: Create the external-dns Namespace
       kubernetes.core.k8s:
         state: present

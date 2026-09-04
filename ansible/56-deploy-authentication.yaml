@@ -470,7 +470,7 @@
                   app.kubernetes.io/part-of: auth
                 # telemetry.metrics in the ConfigMap has been listening on 9999
                 # all along with nothing scraping it. Picked up by the
-                # `kubernetes-pods` job in 57.
+                # `kubernetes-pods` job in 52.
                 annotations:
                   prometheus.io/scrape: "true"
                   prometheus.io/port: "9999"

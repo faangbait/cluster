@@ -1,9 +1,71 @@
-- name: Deploy Namespaces
+- name: Configure Cluster
   hosts: localhost
   connection: local
   become: false
   any_errors_fatal: true
   tasks:
+    - name: Add Calico Chart Repo
+      kubernetes.core.helm_repository:
+        name: projectcalico
+        repo_url: https://docs.tigera.io/calico/charts
+        # helm 4 errors on an existing repo instead of no-opping.
+        force_update: true
+
+    - name: Deploy Calico v3.31.2
+      kubernetes.core.helm:
+        name: calico
+        chart_ref: projectcalico/tigera-operator
+        release_namespace: tigera-operator
+        create_namespace: true
+        chart_version: "v3.31.2"
+        values:
+          installation:
+            cni:
+              type: Calico
+            calicoNetwork:
+              kubeProxyManagement: Enabled
+              linuxDataplane: BPF
+              bgp: Disabled
+              ipPools:
+                - name: default-ipv4-ippool
+                  blockSize: 26
+                  cidr: 10.48.0.0/16
+                  encapsulation: VXLANCrossSubnet
+                  natOutgoing: Enabled
+                  nodeSelector: all()
+              nodeAddressAutodetectionV4:
+                cidrs:
+                  - "10.0.8.0/24"
+          defaultFelixConfiguration:
+            enabled: true
+            bpfExternalServiceMode: Tunnel
+          kubernetesServiceEndpoint:
+            host: "10.0.8.254"
+            port: "6443"
+
+    # Required whenever linuxDataplane: BPF is enabled - IPAM must be node-affine
+    # or the eBPF/DSR forwarding path can send return traffic to the wrong node,
+    # breaking direct node-to-node traffic (e.g. MetalLB memberlist on 7946).
+    # https://docs.tigera.io/calico/latest/networking/ipam/ipam#change-the-node-selector-for-an-ip-pool
+    - name: Enable strict affinity for Calico IPAM (required for eBPF dataplane)
+      kubernetes.core.k8s:
+        state: present
+        api_version: projectcalico.org/v3
+        kind: IPAMConfiguration
+        name: default
+        definition:
+          spec:
+            strictAffinity: true
+
+    - name: Verify networking
+      ansible.builtin.import_role:
+        name: verify-networking
+
+    - name: Label Nodes
+      ansible.builtin.shell: |
+        kubectl label nodes --overwrite node1 highmem=true
+        kubectl label nodes --overwrite node4 highmem=true
+
     # The namespaces we deploy applications into, plus the two things every one of
     # them needs: an image-pull secret and the linuxserver.io PUID/PGID/TZ config.
     - name: Set the application namespaces
@@ -57,7 +119,7 @@
       loop: "{{ cluster_namespaces }}"
       loop_control:
         label: "{{ item.name }}"
-      register: deploy_namespaces_regcred
+      register: configure_cluster_regcred
       # The assert below consumes this, so it must run under --check too.
       check_mode: false
 
@@ -76,7 +138,7 @@
             kubectl -n default get secret regcred \
               -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d
         quiet: true
-      loop: "{{ deploy_namespaces_regcred.results }}"
+      loop: "{{ configure_cluster_regcred.results }}"
       loop_control:
         label: "{{ item.item.name }}"
 
@@ -106,3 +168,50 @@
       loop: "{{ cluster_namespaces }}"
       loop_control:
         label: "{{ item.name }}"
+
+    # The two provisioners behind every PVC: glass-bulk (media, /bulk) and glass-cfg
+    # (application config, /cfg, and the default StorageClass). release_namespace is
+    # vault with no create_namespace, so this must run after the namespaces above.
+
+    - name: Add NFS Subdir External Provisioner Chart Repo
+      kubernetes.core.helm_repository:
+        name: nfs-subdir-external-provisioner
+        repo_url: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+        # helm 4 errors on an existing repo instead of no-opping.
+        force_update: true
+
+    # Pinned to what the live releases run. Unpinned, any run of this playbook would
+    # silently upgrade the provisioner behind every PVC. Bump deliberately.
+    - name: Deploy glass-bulk-provisioner 4.0.18
+      kubernetes.core.helm:
+        name: glass-bulk-provisioner
+        chart_ref: nfs-subdir-external-provisioner/nfs-subdir-external-provisioner
+        chart_version: "4.0.18"
+        release_namespace: vault
+        values:
+          nfs:
+            server: '10.0.8.254'
+            path: '/bulk'
+          storageClass:
+            name: glass-bulk
+            provisionerName: k8s-sigs.io/glass-bulk-provisioner
+            archiveOnDelete: false
+            accessModes: ReadWriteMany
+            pathPattern: pvc/${.PVC.namespace}/${.PVC.name}
+
+    - name: Deploy glass-cfg-provisioner 4.0.18
+      kubernetes.core.helm:
+        name: glass-cfg-provisioner
+        chart_ref: nfs-subdir-external-provisioner/nfs-subdir-external-provisioner
+        chart_version: "4.0.18"
+        release_namespace: vault
+        values:
+          nfs:
+            server: '10.0.8.254'
+            path: '/cfg'
+          storageClass:
+            name: glass-cfg
+            provisionerName: k8s-sigs.io/glass-cfg-provisioner
+            defaultClass: true
+            accessModes: ReadWriteMany
+            pathPattern: pvc/${.PVC.namespace}/${.PVC.name}

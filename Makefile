@@ -4,7 +4,7 @@
 
 test:
 	cd ansible && \
-	ansible-playbook -i inventory/hosts.yml 50-bootstrap-applications.yaml \
+	ansible-playbook -i inventory/hosts.yml 50-configure-cluster.yaml \
 		--tags networking-test
 
 install-packages:
