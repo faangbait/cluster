@@ -99,11 +99,24 @@
       localhost:/glass_bulk /mnt/bulk glusterfs defaults,_netdev,x-systemd.requires=glusterd.service,x-systemd.automount 0 0
     backup: true
 
-- name: Configure Thin Pool
-  ansible.builtin.replace:
+- name: Configure Thin Pool autoextend threshold
+  ansible.builtin.lineinfile:
     path: /etc/lvm/lvm.conf
-    regexp: "# thin_pool_autoextend_threshold.*"
-    replace: "thin_pool_autoextend_threshold = 70"
+    regexp: "^\\s*#?\\s*thin_pool_autoextend_threshold\\s*="
+    line: "	thin_pool_autoextend_threshold = 70"
+    firstmatch: true
+
+# Autoextend adds this percent of the pool's *current* size each time. Keep
+# it small: these pools are already carved out of most of their PV, so a
+# large percentage (the LVM default is 20%) can easily exceed remaining VG
+# free space and autoextend just fails forever (dmeventd retries and logs
+# "Failed command" every 10-30s indefinitely).
+- name: Configure Thin Pool autoextend percent
+  ansible.builtin.lineinfile:
+    path: /etc/lvm/lvm.conf
+    regexp: "^\\s*#?\\s*thin_pool_autoextend_percent\\s*="
+    line: "	thin_pool_autoextend_percent = 1"
+    firstmatch: true
 
 - name: Configure existing bricks
   ansible.builtin.shell: |
@@ -114,9 +127,14 @@
       sudo mkdir -p ${brickpath}
       sudo chattr +i ${brickpath}
 
-      sudo echo "/dev/mapper/gluster${brickno}-brickvol /data/glusterfs/glass${brickno} xfs rw,inode64,noatime,nouuid 1 2" | tee -a /etc/fstab
+      # nofail + a longer device-timeout: thin pool activation runs thin_check
+      # at boot, which can take tens of seconds on a large, heavily-allocated
+      # pool and occasionally exceeds the default device timeout, dropping
+      # the node into emergency mode. nofail means a slow/failed brick mount
+      # no longer blocks the rest of boot.
+      sudo echo "/dev/mapper/gluster${brickno}-brickvol /data/glusterfs/glass${brickno} xfs rw,inode64,noatime,nouuid,nofail,x-systemd.device-timeout=300 1 2" | tee -a /etc/fstab
     done
-    
+
     sudo systemctl daemon-reload
   args:
     creates: /data/glusterfs

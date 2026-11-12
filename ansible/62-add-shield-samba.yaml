@@ -1,0 +1,96 @@
+- name: Add Shield Samba
+  hosts: localhost
+  connection: local
+  become: false
+  any_errors_fatal: true
+  tasks:
+    # Deliberately NOT going through the glass-bulk StorageClass: that's the
+    # nfs-subdir-external-provisioner, which mints a fresh empty directory per
+    # PVC (pvc/<ns>/<name>) rather than pointing at an existing path. The
+    # whole point here is the existing /bulk/games directory on the NFS
+    # server, so this mounts that NFS export directly, same server glass-bulk
+    # itself points at (see glass-bulk-provisioner in 50-configure-cluster.yaml).
+    - name: Deploy Shield Samba (Deployment)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: apps/v1
+        kind: Deployment
+        name: shield-samba
+        namespace: home
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: shield-samba
+              app.kubernetes.io/part-of: shield-samba
+              app.kubernetes.io/release: stable
+            annotations:
+              a8r.io/description: "SMB share for the Shield to collect games/captures to"
+              a8r.io/owner: "@faangbait"
+              a8r.io/repository: "https://github.com/faangbait/cluster"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: shield-samba-server
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: shield-samba-server
+                  app.kubernetes.io/part-of: shield-samba
+              spec:
+                imagePullSecrets:
+                  - name: regcred
+                containers:
+                - name: samba-server
+                  image: dperson/samba:latest
+                  args:
+                    - "-p"
+                    - "-s"
+                    - "games;/games;yes;no;yes;;;;Shield games collection"
+                  ports:
+                    - containerPort: 139
+                      name: netbios-ssn
+                    - containerPort: 445
+                      name: microsoft-ds
+                  volumeMounts:
+                  - mountPath: /games
+                    name: bulk-games
+                  resources:
+                    limits:
+                      memory: 256Mi
+                      cpu: ".5"
+                volumes:
+                  - name: bulk-games
+                    nfs:
+                      server: 10.0.8.254
+                      path: /bulk/games
+
+    - name: Deploy Shield Samba (Service)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        api_version: v1
+        kind: Service
+        name: shield-samba-service
+        namespace: home
+        definition: |
+          metadata:
+            labels:
+              app.kubernetes.io/name: shield-samba-service
+              app.kubernetes.io/part-of: shield-samba
+          spec:
+            type: LoadBalancer
+            # Pinned: unpinned, MetalLB hands out 10.4.0.0/22 sequentially and
+            # gave this the pool's own network address (10.4.0.0) - not a
+            # usable host IP. Same reason Traefik pins 10.4.0.2 in 55.
+            loadBalancerIP: "10.4.0.4"
+            selector:
+              app.kubernetes.io/name: shield-samba-server
+            ports:
+              - port: 139
+                targetPort: 139
+                name: netbios-ssn
+              - port: 445
+                targetPort: 445
+                name: microsoft-ds

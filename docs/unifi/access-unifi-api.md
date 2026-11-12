@@ -61,3 +61,13 @@ Python/other runtimes: read `.env` directly, same variable names.
 
 This is a public repo. Do not include keys, site UUIDs, MACs, WAN IPs in markdown.
 These secret values belong in the `.env` and should only be referenced.
+
+---
+
+# CLAUDE.md
+let's call this section "developer notes" to differentiate it from the `sidechain-for-investigation-access-canonical` policy in other sections
+
+- When we're dealing with the ZONE BASED FIREWALL ("$Userland needs special access to $Serverland or $Homeland, scoped to just this pinhole"), query
+  the actual matrix isnide the firewall using the UniFi access patterns above. This isn't really a "gotcha" so much as a better strategy for our unique
+  network buildout than attempting weird arp tricks. Most services should be able to access most other services with pinholes / loopbacks / internal-dns / maybe a ufw-firewall tcp-allow on tcp/9091, tcp/9092...
+

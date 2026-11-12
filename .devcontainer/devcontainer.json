@@ -2,7 +2,9 @@
 {
     "name": "cluster",
     "image": "faangbait/workspaces:devops",
-    "containerEnv": {},
+    "containerEnv": {
+        "AWS_PROFILE": "power-developer"
+    },
     "customizations": {
         "vscode": {
             "extensions": [],
@@ -24,7 +26,8 @@
         }
     },
     "postCreateCommand": {
-        "install-pyinfra": "uv tool install pyinfra"
+        "install-pyinfra": "uv tool install pyinfra",
+        "configure-aws-sso": "aws configure set --profile power-developer region us-east-1 && aws configure set --profile power-developer output json && aws configure set --profile power-developer sso_session limitless-sso && aws configure set --profile power-developer sso_account_id 133652389253 && aws configure set --profile power-developer sso_role_name PowerDeveloper && aws configure set --sso-session limitless-sso sso_start_url https://d-9067ee3c43.awsapps.com/start/# && aws configure set --sso-session limitless-sso sso_region us-east-1 && aws configure set --sso-session limitless-sso sso_registration_scopes sso:account:access"
     },
     "runArgs": [
         "--add-host=k8s-control-plane-lb:10.0.8.254",
