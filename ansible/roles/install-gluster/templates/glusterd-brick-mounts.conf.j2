@@ -1,0 +1,8 @@
+# Managed by Ansible (install-gluster role)
+# Brick mounts use nofail + a long device-timeout (thin pool activation can
+# take tens of seconds), so they can still be mounting when glusterd starts.
+# glusterd then starts brickd against an empty/not-yet-mounted path, which
+# silently fails that brick and leaves the volume degraded until a manual
+# brick restart. Block glusterd on the mounts actually completing.
+[Unit]
+RequiresMountsFor={{ (gluster_brick_dirs.files | map(attribute='path') | sort) | join(' ') }}
